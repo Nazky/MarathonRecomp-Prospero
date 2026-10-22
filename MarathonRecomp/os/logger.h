@@ -49,6 +49,26 @@
 #define LOGFN_UTILITY(str, ...) LOGF_IMPL(os::logger::ELogType::Utility, "*", str, __VA_ARGS__)
 #endif
 
+// Low-volume PS5 startup/system diagnostics; silent on desktop builds.
+#if defined(__PROSPERO__)
+#define LOG_PS5_DIAG(str) LOG_IMPL(os::logger::ELogType::Warning, "PS5-DIAG", str)
+#define LOGF_PS5_DIAG(str, ...) LOGF_IMPL(os::logger::ELogType::Warning, "PS5-DIAG", str, __VA_ARGS__)
+#else
+#define LOG_PS5_DIAG(str) ((void)0)
+#define LOGF_PS5_DIAG(...) ((void)0)
+#endif
+
+// High-volume GPU tracing is opt-in: each record is synchronously written to
+// the log file and can interfere with frame pacing. Build with
+// PS5_GPU_DIAGNOSTICS=1 to enable it.
+#if defined(__PROSPERO__) && defined(MARATHON_PS5_GPU_DIAGNOSTICS)
+#define LOG_PS5_GPU_DIAG(str) LOG_IMPL(os::logger::ELogType::Warning, "PS5-DIAG", str)
+#define LOGF_PS5_GPU_DIAG(str, ...) LOGF_IMPL(os::logger::ELogType::Warning, "PS5-DIAG", str, __VA_ARGS__)
+#else
+#define LOG_PS5_GPU_DIAG(str) ((void)0)
+#define LOGF_PS5_GPU_DIAG(...) ((void)0)
+#endif
+
 namespace os::logger
 {
     enum class ELogType

@@ -1,5 +1,6 @@
 #include "paths.h"
 #include <os/process.h>
+#include <system_error>
 
 std::filesystem::path g_executableRoot = os::process::GetExecutableRoot();
 std::filesystem::path g_userPath = BuildUserPath();
@@ -22,6 +23,8 @@ std::filesystem::path BuildUserPath()
         userPath = std::filesystem::path{ knownPath } / USER_DIRECTORY;
 
     CoTaskMemFree(knownPath);
+#elif defined(__PROSPERO__)
+    userPath = std::filesystem::path("/data") / USER_DIRECTORY;
 #elif defined(__linux__) || defined(__APPLE__)
     const char* homeDir = getenv("HOME");
 #if defined(__linux__)
@@ -36,16 +39,7 @@ std::filesystem::path BuildUserPath()
         // Prefer to store in the .config directory if it exists. Use the home directory otherwise.
         std::filesystem::path homePath = homeDir;
 #if defined(__linux__)
-        const char* configDir = getenv("XDG_CONFIG_HOME");
-        std::filesystem::path configPath = "";
-        if (configDir == nullptr)
-        {
-            configPath = homePath / ".config";
-        } else
-        {
-            configPath = configDir;
-        }
-
+        std::filesystem::path configPath = homePath / ".config";
 #else
         std::filesystem::path configPath = homePath / "Library" / "Application Support";
 #endif
@@ -59,6 +53,17 @@ std::filesystem::path BuildUserPath()
 #endif
 
     return userPath;
+}
+
+void InitializeUserPath()
+{
+    g_userPath = BuildUserPath();
+
+#if defined(__PROSPERO__)
+    // Establish the writable title data directory before Config::Load().
+    std::error_code ec;
+    std::filesystem::create_directories(g_userPath, ec);
+#endif
 }
 
 const std::filesystem::path& GetUserPath()

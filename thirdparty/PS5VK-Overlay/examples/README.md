@@ -1,0 +1,1 @@
+`minimal_integration.cpp` is an integration snippet, not a standalone app. Add it to an existing app target that already initializes Dear ImGui and has a valid `ImFont*`; call `DrawExamplePS5VKOverlay()` during an active ImGui frame. Replace the demo strings with metrics collected by the host project.

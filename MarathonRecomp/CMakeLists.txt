@@ -91,16 +91,14 @@ if (WIN32)
         "os/win32/logger_win32.cpp"
         "os/win32/media_win32.cpp"
         "os/win32/process_win32.cpp"
-        "os/win32/thread_win32.cpp"
         "os/win32/user_win32.cpp"
         "os/win32/version_win32.cpp"
     )
-elseif (CMAKE_SYSTEM_NAME MATCHES "Linux")
+elseif (CMAKE_SYSTEM_NAME MATCHES "Linux|Prospero")
     set(MARATHON_RECOMP_OS_CXX_SOURCES
         "os/linux/logger_linux.cpp"
         "os/linux/media_linux.cpp"
         "os/linux/process_linux.cpp"
-        "os/linux/thread_linux.cpp"
         "os/linux/user_linux.cpp"
         "os/linux/version_linux.cpp"
     )
@@ -109,7 +107,6 @@ elseif (APPLE)
         "os/macos/logger_macos.cpp"
         "os/macos/media_macos.cpp"
         "os/macos/process_macos.cpp"
-        "os/macos/thread_macos.cpp"
         "os/macos/user_macos.cpp"
         "os/macos/version_macos.cpp"
     )
@@ -130,7 +127,7 @@ set(MARATHON_RECOMP_APU_CXX_SOURCES
     "apu/audio.cpp"
     "apu/xma_decoder.cpp"
     "apu/embedded_player.cpp"
-    "apu/driver/sdl3_driver.cpp"
+    "apu/driver/sdl2_driver.cpp"
 )
 
 set(MARATHON_RECOMP_HID_CXX_SOURCES
@@ -167,6 +164,7 @@ set(MARATHON_RECOMP_UI_CXX_SOURCES
     "ui/imgui_utils.cpp"
     "ui/installer_wizard.cpp"
     "ui/message_window.cpp"
+    "ui/mods_menu.cpp"
     "ui/options_menu.cpp"
 )
 
@@ -194,6 +192,7 @@ set(MARATHON_RECOMP_USER_CXX_SOURCES
 )
 
 set(MARATHON_RECOMP_MOD_CXX_SOURCES
+    "mod/custom_filesystem.cpp"
     "mod/mod_loader.cpp"
 )
 
@@ -203,7 +202,7 @@ set(MARATHON_RECOMP_UTILS_CXX_SOURCES
 )
 
 set(MARATHON_RECOMP_THIRDPARTY_SOURCES
-    "${MARATHON_RECOMP_THIRDPARTY_ROOT}/imgui/backends/imgui_impl_sdl3.cpp"
+    "${MARATHON_RECOMP_THIRDPARTY_ROOT}/imgui/backends/imgui_impl_sdl2.cpp"
     "${MARATHON_RECOMP_THIRDPARTY_ROOT}/imgui/imgui.cpp"
     "${MARATHON_RECOMP_THIRDPARTY_ROOT}/imgui/imgui_demo.cpp"
     "${MARATHON_RECOMP_THIRDPARTY_ROOT}/imgui/imgui_draw.cpp"
@@ -239,7 +238,7 @@ set(MARATHON_RECOMP_CXX_SOURCES
     "sdl_listener.cpp"
     "stdafx.cpp"
     "version.cpp"
-    
+
     ${MARATHON_RECOMP_KERNEL_CXX_SOURCES}
     ${MARATHON_RECOMP_LOCALE_CXX_SOURCES}
     ${MARATHON_RECOMP_OS_CXX_SOURCES}
@@ -255,6 +254,13 @@ set(MARATHON_RECOMP_CXX_SOURCES
     ${MARATHON_RECOMP_MOD_CXX_SOURCES}
     ${MARATHON_RECOMP_THIRDPARTY_SOURCES}
 )
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Prospero")
+    # Jailbroken Prospero treats /data as native read/write; this keeps the
+    # filesystem access policy hook in the platform build.
+    list(APPEND MARATHON_RECOMP_CXX_SOURCES "ps5/elevation.cpp")
+    add_compile_definitions(__PROSPERO__ USE_PTHREAD)
+endif()
 
 include("version.cmake")
 
@@ -334,13 +340,15 @@ else()
 endif()
 
 if (MARATHON_RECOMP_FLATPAK)
-    target_compile_definitions(MarathonRecomp PRIVATE 
+    target_compile_definitions(MarathonRecomp PRIVATE
         "MARATHON_RECOMP_FLATPAK"
         "GAME_INSTALL_DIRECTORY=\"/var/data\""
     )
 endif()
 
-find_package(CURL REQUIRED)
+if (NOT CMAKE_SYSTEM_NAME STREQUAL "Prospero")
+    find_package(CURL REQUIRED)
+endif()
 
 if (MARATHON_RECOMP_METAL)
     target_compile_definitions(MarathonRecomp PRIVATE MARATHON_RECOMP_METAL)
@@ -386,23 +394,31 @@ target_link_libraries(MarathonRecomp PRIVATE
     nfd::nfd
     o1heap
     XenonUtils
-    SDL3::SDL3-static
-    SDL3_mixer::SDL3_mixer
+    SDL2::SDL2-static
+    SDL2_mixer
     tomlplusplus::tomlplusplus
     MarathonRecompLib
     xxHash::xxhash
-    CURL::libcurl
     plume
 )
 
+if (NOT CMAKE_SYSTEM_NAME STREQUAL "Prospero")
+    target_link_libraries(MarathonRecomp PRIVATE CURL::libcurl)
+endif()
+
 target_link_libraries(MarathonRecomp PRIVATE ffmpeg)
 
-set(GENERATED_SOURCE_PATH ${CMAKE_CURRENT_BINARY_DIR}/generated)
+# Import the workspace PS5VK-Overlay renderer and bind it to this project's ImGui headers.
+set(PS5VK_OVERLAY_IMGUI_INCLUDE_DIR "${MARATHON_RECOMP_THIRDPARTY_ROOT}/imgui" CACHE PATH "ImGui headers used by PS5VK-Overlay" FORCE)
+add_subdirectory(
+    "${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/PS5VK-Overlay"
+    "${CMAKE_CURRENT_BINARY_DIR}/PS5VK-Overlay"
+)
+target_link_libraries(MarathonRecomp PRIVATE PS5VK::Overlay)
 
 target_include_directories(MarathonRecomp PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     "${CMAKE_CURRENT_SOURCE_DIR}/api"
-    ${GENERATED_SOURCE_PATH}
     ${MARATHON_RECOMP_THIRDPARTY_INCLUDES}
 )
 
@@ -417,47 +433,38 @@ endif()
 
 target_precompile_headers(MarathonRecomp PUBLIC ${MARATHON_RECOMP_PRECOMPILED_HEADERS})
 
-set(HLSL_SHADERS_IN_PATH ${CMAKE_CURRENT_SOURCE_DIR}/gpu/shader/hlsl)
-set(MSL_SHADERS_IN_PATH ${CMAKE_CURRENT_SOURCE_DIR}/gpu/shader/msl)
-set(HLSL_SHADERS_OUT_PATH ${GENERATED_SOURCE_PATH}/gpu/shader/hlsl)
-set(MSL_SHADERS_OUT_PATH ${GENERATED_SOURCE_PATH}/gpu/shader/msl)
-file(MAKE_DIRECTORY ${HLSL_SHADERS_OUT_PATH})
-file(MAKE_DIRECTORY ${MSL_SHADERS_OUT_PATH})
-
 function(compile_shader FILE_PATH TARGET_NAME)
-    set(HLSL_FILE_PATH ${HLSL_SHADERS_IN_PATH}/${FILE_PATH}.hlsl)
-    set(MSL_FILE_PATH ${MSL_SHADERS_IN_PATH}/${FILE_PATH}.metal)
-    set(HLSL_FILE_OUT_PATH ${HLSL_SHADERS_OUT_PATH}/${FILE_PATH}.hlsl)
-    set(MSL_FILE_OUT_PATH ${MSL_SHADERS_OUT_PATH}/${FILE_PATH}.metal)
+    set(HLSL_FILE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/gpu/shader/hlsl/${FILE_PATH}.hlsl)
+    set(MSL_FILE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/gpu/shader/msl/${FILE_PATH}.metal)
     cmake_path(GET HLSL_FILE_PATH STEM HLSL_NAME)
     cmake_path(GET MSL_FILE_PATH STEM MSL_NAME)
     if (MARATHON_RECOMP_METAL)
         add_custom_command(
-                OUTPUT ${MSL_FILE_OUT_PATH}.ir
-                COMMAND ${XCRUN_TOOL} -sdk macosx metal -o ${MSL_FILE_OUT_PATH}.ir -c ${MSL_FILE_PATH} -D__air__ -DMARATHON_RECOMP -frecord-sources -gline-tables-only
+                OUTPUT ${MSL_FILE_PATH}.ir
+                COMMAND ${XCRUN_TOOL} -sdk macosx metal -o ${MSL_FILE_PATH}.ir -c ${MSL_FILE_PATH} -D__air__ -DMARATHON_RECOMP -frecord-sources -gline-tables-only
                 DEPENDS ${MSL_FILE_PATH}
         )
         add_custom_command(
-                OUTPUT ${MSL_FILE_OUT_PATH}.metallib
-                COMMAND ${XCRUN_TOOL} -sdk macosx metallib -o ${MSL_FILE_OUT_PATH}.metallib ${MSL_FILE_OUT_PATH}.ir
-                DEPENDS ${MSL_FILE_OUT_PATH}.ir
+                OUTPUT ${MSL_FILE_PATH}.metallib
+                COMMAND ${XCRUN_TOOL} -sdk macosx metallib -o ${MSL_FILE_PATH}.metallib ${MSL_FILE_PATH}.ir
+                DEPENDS ${MSL_FILE_PATH}.ir
         )
-        BIN2C(TARGET_OBJ MarathonRecomp SOURCE_FILE "${MSL_FILE_OUT_PATH}.metallib" DEST_FILE "${MSL_FILE_OUT_PATH}.metallib" ARRAY_NAME "g_${MSL_NAME}_air")
+        BIN2C(TARGET_OBJ MarathonRecomp SOURCE_FILE "${MSL_FILE_PATH}.metallib" DEST_FILE "${MSL_FILE_PATH}.metallib" ARRAY_NAME "g_${MSL_NAME}_air")
     endif()
     if (MARATHON_RECOMP_D3D12)
         add_custom_command(
-            OUTPUT ${HLSL_FILE_OUT_PATH}.dxil.h
-            COMMAND ${DIRECTX_DXC_TOOL} -T ${TARGET_NAME} -HV 2021 -all-resources-bound -Wno-ignored-attributes -DMARATHON_RECOMP -E shaderMain -Fh ${HLSL_FILE_OUT_PATH}.dxil.h ${HLSL_FILE_PATH} -Vn g_${HLSL_NAME}_dxil
+            OUTPUT ${HLSL_FILE_PATH}.dxil.h
+            COMMAND ${DIRECTX_DXC_TOOL} -T ${TARGET_NAME} -HV 2021 -all-resources-bound -Wno-ignored-attributes -DMARATHON_RECOMP -E shaderMain -Fh ${HLSL_FILE_PATH}.dxil.h ${HLSL_FILE_PATH} -Vn g_${HLSL_NAME}_dxil
             DEPENDS ${HLSL_FILE_PATH}
         )
-        target_sources(MarathonRecomp PRIVATE ${HLSL_FILE_OUT_PATH}.dxil.h)
+        target_sources(MarathonRecomp PRIVATE ${HLSL_FILE_PATH}.dxil.h)
     endif()
     add_custom_command(
-        OUTPUT ${HLSL_FILE_OUT_PATH}.spirv.h
-        COMMAND ${DIRECTX_DXC_TOOL} -T ${TARGET_NAME} -HV 2021 -all-resources-bound -spirv -fvk-use-dx-layout ${ARGN} -DMARATHON_RECOMP -E shaderMain -Fh ${HLSL_FILE_OUT_PATH}.spirv.h ${HLSL_FILE_PATH} -Vn g_${HLSL_NAME}_spirv
+        OUTPUT ${HLSL_FILE_PATH}.spirv.h
+        COMMAND ${DIRECTX_DXC_TOOL} -T ${TARGET_NAME} -HV 2021 -all-resources-bound -spirv -fvk-use-dx-layout ${ARGN} -DMARATHON_RECOMP -E shaderMain -Fh ${HLSL_FILE_PATH}.spirv.h ${HLSL_FILE_PATH} -Vn g_${HLSL_NAME}_spirv
         DEPENDS ${HLSL_FILE_PATH}
     )
-    target_sources(MarathonRecomp PRIVATE ${HLSL_FILE_OUT_PATH}.spirv.h)
+    target_sources(MarathonRecomp PRIVATE ${HLSL_FILE_PATH}.spirv.h)
 endfunction()
 
 function(compile_vertex_shader FILE_PATH)
@@ -468,13 +475,21 @@ function(compile_pixel_shader FILE_PATH)
     compile_shader(${FILE_PATH} ps_6_0)
 endfunction()
 
+compile_pixel_shader(blend_color_alpha_ps)
 compile_pixel_shader(conditional_survey_ps)
 compile_vertex_shader(copy_vs)
 compile_pixel_shader(copy_color_ps)
 compile_pixel_shader(copy_depth_ps)
+compile_pixel_shader(csd_filter_ps)
+compile_vertex_shader(csd_no_tex_vs)
+compile_vertex_shader(csd_vs)
 compile_vertex_shader(enhanced_burnout_blur_vs)
 compile_pixel_shader(enhanced_burnout_blur_ps)
 compile_pixel_shader(movie_ps)
+compile_pixel_shader(gaussian_blur_3x3)
+compile_pixel_shader(gaussian_blur_5x5)
+compile_pixel_shader(gaussian_blur_7x7)
+compile_pixel_shader(gaussian_blur_9x9)
 compile_pixel_shader(gamma_correction_ps)
 compile_pixel_shader(imgui_ps)
 compile_vertex_shader(imgui_vs)
@@ -544,11 +559,7 @@ BIN2C(TARGET_OBJ MarathonRecomp SOURCE_FILE "${RESOURCES_SOURCE_PATH}/images/ins
 BIN2C(TARGET_OBJ MarathonRecomp SOURCE_FILE "${RESOURCES_SOURCE_PATH}/images/installer/install_008.dds" DEST_FILE "${RESOURCES_OUTPUT_PATH}/images/installer/install_008.dds" ARRAY_NAME "g_install_008" COMPRESSION_TYPE "zstd")
 
 ## Game Icon ##
-if (APPLE)
-    BIN2C(TARGET_OBJ MarathonRecomp SOURCE_FILE "${RESOURCES_SOURCE_PATH}/images/game_icon_mac.png" DEST_FILE "${RESOURCES_OUTPUT_PATH}/images/game_icon_mac.png" ARRAY_NAME "g_game_icon")
-else()
-    BIN2C(TARGET_OBJ MarathonRecomp SOURCE_FILE "${RESOURCES_SOURCE_PATH}/images/game_icon.bmp" DEST_FILE "${RESOURCES_OUTPUT_PATH}/images/game_icon.bmp" ARRAY_NAME "g_game_icon")
-endif()
+BIN2C(TARGET_OBJ MarathonRecomp SOURCE_FILE "${RESOURCES_SOURCE_PATH}/images/game_icon.bmp" DEST_FILE "${RESOURCES_OUTPUT_PATH}/images/game_icon.bmp" ARRAY_NAME "g_game_icon")
 
 ## Audio ##
 BIN2C(TARGET_OBJ MarathonRecomp SOURCE_FILE "${RESOURCES_SOURCE_PATH}/music/installer.ogg" DEST_FILE "${RESOURCES_OUTPUT_PATH}/music/installer.ogg" ARRAY_NAME "g_installer_music")

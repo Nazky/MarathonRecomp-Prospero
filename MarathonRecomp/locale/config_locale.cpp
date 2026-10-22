@@ -641,12 +641,22 @@ CONFIG_DEFINE_LOCALE(VSync)
 
 CONFIG_DEFINE_LOCALE(FPS)
 {
-    { ELanguage::English,  { "FPS", "Set the max frame rate the game can run at. WARNING: this may introduce glitches at frame rates other than 60 FPS." } },
-    { ELanguage::Japanese, { "フレームレート上限", "ゲームが実行できる最大フレームレートを設定します　警告:60FPS以外のフレームレートでは不具合が発生する可能性があります" } },
-    { ELanguage::German,   { "FPS", "Bestimmt die maximale Bildwiederholrate. WARNUNG: es können Fehler bei einer Bildwiederholrate über 60 FPS auftreten." } },
-    { ELanguage::French,   { "IPS", "Limiter le nombre d'images par seconde. ATTENTION : Cela peut provoquer des bugs à des fréquences autres que 60 IPS." } },
-    { ELanguage::Spanish,  { "FPS", "Establece la tasa máxima de fotogramas a la que puede ejecutarse el juego. ADVERTENCIA: esto puede provocar fallos en velocidades distintas a 60 FPS." } },
-    { ELanguage::Italian,  { "FPS", "Imposta il framerate massimo del gioco. ATTENZIONE: questa opzione può causare problemi con dei framerate rate superiori a 60 FPS." } }
+    { ELanguage::English,  { "FPS", "Set the maximum frame rate. On PS5, choose 30, 60, 90, or 120 FPS (default 60); rates above 60 may cause game-timing glitches." } },
+    { ELanguage::Japanese, { "フレームレート上限", "最大フレームレートを設定します。PS5では30、60、90、120 FPSから選択できます（初期値60）。60 FPSを超えるとゲームのタイミングに不具合が生じる場合があります。" } },
+    { ELanguage::German,   { "FPS", "Legt die maximale Bildrate fest. Auf PS5 stehen 30, 60, 90 oder 120 FPS zur Auswahl (Standard: 60); mehr als 60 FPS können Timing-Fehler verursachen." } },
+    { ELanguage::French,   { "IPS", "Définit la limite d’images par seconde. Sur PS5, choisissez 30, 60, 90 ou 120 IPS (60 par défaut) ; au-delà de 60 IPS, des problèmes de synchronisation peuvent survenir." } },
+    { ELanguage::Spanish,  { "FPS", "Establece la tasa máxima de fotogramas. En PS5 puedes elegir 30, 60, 90 o 120 FPS (60 por defecto); superar 60 puede causar fallos de sincronización." } },
+    { ELanguage::Italian,  { "FPS", "Imposta la frequenza massima. Su PS5 puoi scegliere 30, 60, 90 o 120 FPS (60 predefinito); oltre 60 FPS possono verificarsi problemi di temporizzazione." } }
+};
+
+CONFIG_DEFINE_LOCALE(ShowSystemInfoOverlay)
+{
+    { ELanguage::English,  { "System Info Overlay", "Show expanded diagnostics: FPS, CPU/GPU frame timing, PS5 SoC temperatures, heap usage, output and render resolutions, and runtime paths." } },
+    { ELanguage::Japanese, { "システム情報オーバーレイ", "FPS、CPU/GPUのフレーム時間、PS5 SoC温度、ヒープ使用量、出力・描画解像度、実行パスを表示します。" } },
+    { ELanguage::German,   { "Systeminfo-Overlay", "Zeigt erweiterte Diagnosedaten: FPS, CPU/GPU-Frame-Zeiten, PS5-SoC-Temperaturen, Heap-Nutzung, Ausgabe- und Renderauflösung sowie Programmpfade." } },
+    { ELanguage::French,   { "Panneau d’informations système", "Affiche des diagnostics détaillés : IPS, temps CPU/GPU, températures du SoC PS5, mémoire des heaps, résolutions de sortie et de rendu, ainsi que les chemins d’exécution." } },
+    { ELanguage::Spanish,  { "Panel de información del sistema", "Muestra diagnósticos ampliados: FPS, tiempos de CPU/GPU, temperaturas del SoC de PS5, uso de memoria, resoluciones de salida y renderizado y rutas del programa." } },
+    { ELanguage::Italian,  { "Pannello info di sistema", "Mostra diagnostica dettagliata: FPS, tempi CPU/GPU, temperature SoC PS5, memoria heap, risoluzioni di uscita e rendering e percorsi del programma." } }
 };
 
 CONFIG_DEFINE_LOCALE(Brightness)

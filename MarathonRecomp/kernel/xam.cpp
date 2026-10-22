@@ -10,7 +10,7 @@
 #include <unordered_set>
 #include "xxHashMap.h"
 #include <user/paths.h>
-#include <SDL3/SDL.h>
+#include <SDL.h>
 
 struct XamListener : KernelObject
 {
@@ -297,15 +297,19 @@ uint32_t XamEnumerate(uint32_t hEnum, uint32_t dwFlags, void* pvBuffer, uint32_t
 PPC_FUNC_IMPL(__imp__sub_825B14B8);
 PPC_FUNC(sub_825B14B8) {
     const char* _str = (const char*)g_memory.Translate(ctx.r3.u32);
-    uint32_t _1;
-    char _str_end[256];
-    sscanf(_str, "download:\\%08x\\%255[^\n\r]", &_1, _str_end);
+    if (_str == nullptr)
+        return;
 
-    XCONTENT_DATA _data;
+    uint32_t _1{};
+    char _str_end[256]{}; // %255 plus the terminating NUL.
+    if (sscanf(_str, "download:\\%08x\\%255[^\n\r]", &_1, _str_end) != 2)
+        return;
+
+    XCONTENT_DATA _data{};
     _data.dwContentType = 2;
     _data.DeviceID = _1;
-
-    memcpy(&_data.szFileName, &_str_end, strlen(_str_end) + 1);
+    // XCONTENT_DATA::szFileName is only 42 bytes, including its terminator.
+    std::snprintf(_data.szFileName, sizeof(_data.szFileName), "%s", _str_end);
 
     XamContentCreateEx(0, "download", &_data, 3, 0, 0, 0, 0, 0);
 }

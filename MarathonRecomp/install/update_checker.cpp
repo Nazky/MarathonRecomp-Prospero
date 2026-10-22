@@ -1,5 +1,13 @@
 #include "update_checker.h"
 
+#if defined(__PROSPERO__)
+// Online update checks and desktop browser launching are disabled on PS5.
+void UpdateChecker::initialize() {}
+bool UpdateChecker::start() { return false; }
+UpdateChecker::Result UpdateChecker::check() { return Result::NotStarted; }
+void UpdateChecker::visitWebsite() {}
+#else
+
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 
@@ -173,3 +181,4 @@ void UpdateChecker::visitWebsite()
     static_assert(false, "Visit website not implemented for this platform.");
 #endif
 }
+#endif // !defined(__PROSPERO__)

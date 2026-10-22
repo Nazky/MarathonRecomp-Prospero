@@ -11,14 +11,43 @@
 #include <user/paths.h>
 #include <user/registry.h>
 #include <xxHashMap.h>
+#include <cstdio>
+#if defined(__PROSPERO__)
+#include <unistd.h>
+extern "C" int sceSystemServiceLoadExec(const char* path, char* const argv[]);
+#endif
 
 static std::thread::id g_mainThreadId = std::this_thread::get_id();
 extern std::array<XXH64_hash_t, 29> g_taskUpdatesOnPause;
 
 void App::Restart(std::vector<std::string> restartArgs)
 {
+#if defined(__PROSPERO__)
+    std::string executable = "/app0/eboot.bin";
+    std::vector<char*> argv;
+    argv.reserve(restartArgs.size() + 2);
+    argv.push_back(executable.data());
+    for (auto& arg : restartArgs)
+        argv.push_back(arg.data());
+    argv.push_back(nullptr);
+
+    (void)sceSystemServiceLoadExec(executable.c_str(), argv.data());
+    Exit();
+#else
     os::process::StartProcess(os::process::GetExecutablePath(), restartArgs, os::process::GetWorkingDirectory());
     Exit();
+#endif
+}
+
+void App::RestartForSettings(std::vector<std::string> restartArgs)
+{
+#if defined(__PROSPERO__)
+    (void)restartArgs;
+    Registry::Save();
+    Exit();
+#else
+    Restart(restartArgs);
+#endif
 }
 
 void App::Exit()
@@ -29,7 +58,23 @@ void App::Exit()
     timeEndPeriod(1);
 #endif
 
+#if defined(__PROSPERO__)
+    // Native title shutdown must go through the PS5 shell; kernel exit(0) is not safe here.
+    std::fflush(nullptr);
+    const int result = sceSystemServiceLoadExec("exit", nullptr);
+    if (result >= 0)
+    {
+        // The shell terminates the title asynchronously after accepting the request.
+        for (;;)
+            usleep(100000);
+    }
+    else
+    {
+        LOGF_ERROR("sceSystemServiceLoadExec(exit) failed: {}", result);
+    }
+#else
     std::_Exit(0);
+#endif
 }
 
 // Sonicteam::AppMarathon::AppMarathon
@@ -93,7 +138,7 @@ PPC_FUNC(sub_825EA610)
     if (std::this_thread::get_id() == g_mainThreadId)
     {
         SDL_PumpEvents();
-        SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
+        SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
 
         GameWindow::Update();
     }
@@ -143,6 +188,19 @@ PPC_FUNC(sub_82582648)
 
     __imp__sub_82582648(ctx, base);
 }
+
+#if _DEBUG
+// Sonicteam::SoX::Thread::Thread
+PPC_FUNC_IMPL(__imp__sub_825867A8);
+PPC_FUNC(sub_825867A8)
+{
+    auto pThreadName = (const char*)g_memory.Translate(ctx.r4.u32);
+
+    os::logger::Log(fmt::format("Created thread: {}", pThreadName), os::logger::ELogType::Utility, "Sonicteam::SoX::Thread");
+
+    __imp__sub_825867A8(ctx, base);
+}
+#endif
 
 PPC_FUNC_IMPL(__imp__sub_82744840);
 PPC_FUNC(sub_82744840)

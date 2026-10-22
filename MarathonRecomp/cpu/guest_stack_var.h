@@ -10,8 +10,8 @@ template<typename T, bool Init = true>
 class guest_stack_var
 {
 private:
-    uint32_t m_ptr = NULL;
-    uint32_t m_oldStackPtr = NULL;
+    uint32_t m_ptr = 0;
+    uint32_t m_oldStackPtr = 0;
 
     void AllocGuestStackMemory()
     {

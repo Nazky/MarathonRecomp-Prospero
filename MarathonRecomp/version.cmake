@@ -131,6 +131,10 @@ function(CreateVersionString)
         if (ARGS_BUILD_TYPE AND ARGS_SHOW_BUILD_TYPE)
             string(APPEND VERSION_STRING " (${ARGS_BUILD_TYPE})")
         endif()
+
+        if (CMAKE_SYSTEM_NAME STREQUAL "Prospero")
+            string(APPEND VERSION_STRING "-PS5")
+        endif()
     endif()
 
     if (ARGS_OUTPUT_VAR)

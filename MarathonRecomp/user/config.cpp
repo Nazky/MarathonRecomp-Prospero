@@ -261,12 +261,16 @@ CONFIG_DEFINE_ENUM_TEMPLATE(SDL_Scancode)
     { "RIGHT ALT", SDL_SCANCODE_RALT },
     { "RIGHT SUPER", SDL_SCANCODE_RGUI },
     { "MODE", SDL_SCANCODE_MODE },
-    { "AUDIO NEXT", SDL_SCANCODE_MEDIA_NEXT_TRACK },
-    { "AUDIO PREV", SDL_SCANCODE_MEDIA_PREVIOUS_TRACK },
-    { "AUDIO STOP", SDL_SCANCODE_MEDIA_STOP },
-    { "AUDIO PLAY", SDL_SCANCODE_MEDIA_PLAY },
-    { "AUDIO MUTE", SDL_SCANCODE_MUTE },
-    { "MEDIA SELECT", SDL_SCANCODE_MEDIA_SELECT },
+    { "AUDIO NEXT", SDL_SCANCODE_AUDIONEXT },
+    { "AUDIO PREV", SDL_SCANCODE_AUDIOPREV },
+    { "AUDIO STOP", SDL_SCANCODE_AUDIOSTOP },
+    { "AUDIO PLAY", SDL_SCANCODE_AUDIOPLAY },
+    { "AUDIO MUTE", SDL_SCANCODE_AUDIOMUTE },
+    { "MEDIA SELECT", SDL_SCANCODE_MEDIASELECT },
+    { "WWW", SDL_SCANCODE_WWW },
+    { "MAIL", SDL_SCANCODE_MAIL },
+    { "CALCULATOR", SDL_SCANCODE_CALCULATOR },
+    { "COMPUTER", SDL_SCANCODE_COMPUTER },
     { "AC SEARCH", SDL_SCANCODE_AC_SEARCH },
     { "AC HOME", SDL_SCANCODE_AC_HOME },
     { "AC BACK", SDL_SCANCODE_AC_BACK },
@@ -274,10 +278,18 @@ CONFIG_DEFINE_ENUM_TEMPLATE(SDL_Scancode)
     { "AC STOP", SDL_SCANCODE_AC_STOP },
     { "AC REFRESH", SDL_SCANCODE_AC_REFRESH },
     { "AC BOOKMARKS", SDL_SCANCODE_AC_BOOKMARKS },
-    { "EJECT", SDL_SCANCODE_MEDIA_EJECT },
+    { "BRIGHTNESS DOWN", SDL_SCANCODE_BRIGHTNESSDOWN },
+    { "BRIGHTNESS UP", SDL_SCANCODE_BRIGHTNESSUP },
+    { "DISPLAY SWITCH", SDL_SCANCODE_DISPLAYSWITCH },
+    { "KBD ILLUM TOGGLE", SDL_SCANCODE_KBDILLUMTOGGLE },
+    { "KBD ILLUM DOWN", SDL_SCANCODE_KBDILLUMDOWN },
+    { "KBD ILLUM UP", SDL_SCANCODE_KBDILLUMUP },
+    { "EJECT", SDL_SCANCODE_EJECT },
     { "SLEEP", SDL_SCANCODE_SLEEP },
-    { "AUDIO REWIND", SDL_SCANCODE_MEDIA_REWIND },
-    { "AUDIO FAST FORWARD", SDL_SCANCODE_MEDIA_FAST_FORWARD },
+    { "APP 1", SDL_SCANCODE_APP1 },
+    { "APP 2", SDL_SCANCODE_APP2 },
+    { "AUDIO REWIND", SDL_SCANCODE_AUDIOREWIND },
+    { "AUDIO FAST FORWARD", SDL_SCANCODE_AUDIOFASTFORWARD },
     { "SOFT LEFT", SDL_SCANCODE_SOFTLEFT },
     { "SOFT RIGHT", SDL_SCANCODE_SOFTRIGHT },
     { "CALL", SDL_SCANCODE_CALL },
@@ -762,6 +774,59 @@ std::filesystem::path Config::GetConfigPath()
     return GetUserPath() / "config.toml";
 }
 
+#if defined(__PROSPERO__)
+extern "C" int sceSystemServiceParamGetInt(int paramId, int* value);
+
+static ELanguage DetectPS5SystemLanguage()
+{
+    int systemLanguage = 1; // English (US) fallback.
+    if (sceSystemServiceParamGetInt(1 /* SCE_SYSTEM_SERVICE_PARAM_ID_LANG */, &systemLanguage) == 0)
+    {
+        switch (systemLanguage)
+        {
+        case 0:  return ELanguage::Japanese;
+        case 1:  // English (US)
+        case 18: return ELanguage::English; // English (UK)
+        case 2:  // French
+        case 22: return ELanguage::French;  // French (Canada)
+        case 3:  // Spanish
+        case 20: return ELanguage::Spanish; // Spanish (Latin America)
+        case 4:  return ELanguage::German;
+        case 5:  return ELanguage::Italian;
+        default: break;
+        }
+    }
+
+    return ELanguage::English;
+}
+
+static void UpdatePS5AutoLanguage(ELanguage language)
+{
+    Config::AutoLanguage.Value = language == DetectPS5SystemLanguage();
+    Config::AutoLanguage.IsLoadedFromConfig = true;
+}
+
+static int32_t SnapPS5FPS(int32_t value)
+{
+    int32_t closest = FPS_PROSPERO_OPTIONS[0];
+    int64_t closestDistance = 0x7fffffffffffffffLL;
+
+    for (int32_t option : FPS_PROSPERO_OPTIONS)
+    {
+        const int64_t distance = value >= option
+            ? int64_t(value) - option
+            : int64_t(option) - value;
+        if (distance < closestDistance)
+        {
+            closest = option;
+            closestDistance = distance;
+        }
+    }
+
+    return closest;
+}
+#endif
+
 void Config::CreateCallbacks()
 {
     Config::Language.Callback = [](ConfigDef<ELanguage>* def)
@@ -769,28 +834,43 @@ void Config::CreateCallbacks()
         if (!App::s_isInit)
             return;
 
+#if defined(__PROSPERO__)
+        // Track a manual language selection immediately. If it is cancelled,
+        // the callback runs again with the restored value and resets this flag.
+        UpdatePS5AutoLanguage(def->Value);
+#endif
         OptionsMenu::s_commonMenu.SetTitle(Localise("Options_Header_Name"), false);
     };
+
+#if defined(__PROSPERO__)
+    // Persist the explicit choice when the player confirms the language.
+    // Choosing the current PS5 language again resumes automatic following.
+    Config::Language.ApplyCallback = [](ConfigDef<ELanguage>* def)
+    {
+        UpdatePS5AutoLanguage(def->Value);
+        Config::Save();
+    };
+#endif
 
     Config::WindowSize.LockCallback = [](ConfigDef<int32_t>* def)
     {
         // Try matching the current window size with a known configuration.
         if (def->Value < 0)
-            def->Value = GameWindow::FindNearestWindowMode();
+            def->Value = GameWindow::FindNearestDisplayMode();
     };
 
     Config::WindowSize.ApplyCallback = [](ConfigDef<int32_t>* def)
     {
-        const auto& windowModes = GameWindow::s_windowModes;
+        auto displayModes = GameWindow::GetDisplayModes();
 
         // Use largest supported resolution if overflowed.
-        if (def->Value >= windowModes.size())
-            def->Value = windowModes.size() - 1;
+        if (def->Value >= displayModes.size())
+            def->Value = displayModes.size() - 1;
 
-        const auto& mode = windowModes[def->Value];
+        auto& mode = displayModes[def->Value];
+        auto centre = SDL_WINDOWPOS_CENTERED_DISPLAY(GameWindow::GetDisplay());
 
-        GameWindow::SetMaximised(false);
-        GameWindow::SetDimensions(mode.w, mode.h);
+        GameWindow::SetDimensions(mode.w, mode.h, centre, centre);
     };
 
     Config::Monitor.Callback = [](ConfigDef<int32_t>* def)
@@ -818,10 +898,26 @@ void Config::Load()
         s_isCallbacksCreated = true;
     }
 
+#if defined(__PROSPERO__)
+    const ELanguage systemLanguage = DetectPS5SystemLanguage();
+    Config::Language.DefaultValue = systemLanguage;
+    Config::Language.Value = systemLanguage;
+#endif
+
     auto configPath = GetConfigPath();
 
     if (!std::filesystem::exists(configPath))
     {
+#if defined(__PROSPERO__)
+        // A fresh config follows the PS5 language until the player selects an override.
+        Config::AutoLanguage.Value = true;
+        Config::AutoLanguage.IsLoadedFromConfig = true;
+        // The compiled PS5 defaults are already the maximum-quality preset.
+        Config::PS5MaxDefaultsMigrated.Value = true;
+        Config::PS5MaxDefaultsMigrated.IsLoadedFromConfig = true;
+        Config::PS5FPS60DefaultMigrated.Value = true;
+        Config::PS5FPS60DefaultMigrated.IsLoadedFromConfig = true;
+#endif
         Config::Save();
         return;
     }
@@ -847,6 +943,62 @@ void Config::Load()
     {
         LOGFN_ERROR("Failed to parse configuration: {}", err.what());
     }
+
+#if defined(__PROSPERO__)
+    bool savePS5Config = false;
+
+    // Migrate configs created before AutoLanguage was persisted. A stored
+    // language different from the current PS5 language represents an override.
+    if (!Config::AutoLanguage.IsLoadedFromConfig)
+    {
+        const bool hasSavedLanguage = Config::Language.IsLoadedFromConfig;
+        Config::AutoLanguage.Value = !hasSavedLanguage || Config::Language.Value == systemLanguage;
+        Config::AutoLanguage.IsLoadedFromConfig = true;
+        savePS5Config = true;
+    }
+
+    if (Config::AutoLanguage.Value)
+        Config::Language.Value = systemLanguage;
+
+    if (!Config::PS5MaxDefaultsMigrated.Value)
+    {
+        // Upgrade existing saves once to the requested PS5 maximum-quality preset.
+        // The native 4K render scale is retained; subsequent user edits are preserved.
+        Config::ResolutionScale.Value = 1.0f;
+        Config::Fullscreen.Value = true;
+        Config::VSync.Value = true;
+        Config::FPS.Value = 60;
+        Config::AntiAliasing.Value = EAntiAliasing::MSAA8x;
+        Config::TransparencyAntiAliasing.Value = true;
+        Config::AnisotropicFiltering.Value = 16;
+        Config::ShadowResolution.Value = EShadowResolution::x8192;
+        Config::ReflectionResolution.Value = EReflectionResolution::Full;
+        Config::RadialBlur.Value = ERadialBlur::Enhanced;
+        Config::CutsceneAspectRatio.Value = ECutsceneAspectRatio::Unlocked;
+        Config::ControllerIcons.Value = EControllerIcons::PlayStation;
+        Config::PS5MaxDefaultsMigrated.Value = true;
+        Config::PS5MaxDefaultsMigrated.IsLoadedFromConfig = true;
+        Config::PS5FPS60DefaultMigrated.Value = true;
+        Config::PS5FPS60DefaultMigrated.IsLoadedFromConfig = true;
+        savePS5Config = true;
+    }
+
+    // One-time migration for saves that already recorded the earlier defaults
+    // migration: move the old 120 default to 60 while retaining 30/60/90 choices.
+    if (!Config::PS5FPS60DefaultMigrated.Value)
+    {
+        if (Config::FPS.Value == 120)
+            Config::FPS.Value = 60;
+        Config::PS5FPS60DefaultMigrated.Value = true;
+        Config::PS5FPS60DefaultMigrated.IsLoadedFromConfig = true;
+        savePS5Config = true;
+    }
+
+    if (savePS5Config)
+        Config::Save();
+
+    Config::FPS.Value = SnapPS5FPS(Config::FPS.Value);
+#endif
 }
 
 void Config::Save()

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <filesystem>
+
 struct InstallerWizard
 {
     static inline bool s_isVisible = false;

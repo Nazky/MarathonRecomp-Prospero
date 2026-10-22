@@ -206,6 +206,9 @@ bool DisableKingdomValleyMist()
     return Config::DisableKingdomValleyMist;
 }
 
+// Some environment maps are loaded through a resource key that collides with
+// another texture. Keep the override scoped to the resource-manager call that
+// follows this scene-load hook.
 static thread_local bool g_isLoadingEnvMap = false;
 
 void SceneEnvMapLoadTexture()

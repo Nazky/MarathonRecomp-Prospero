@@ -1,5 +1,5 @@
 #include <stdafx.h>
-#include <SDL3/SDL.h>
+#include <SDL.h>
 #include <user/config.h>
 #include <hid/hid.h>
 #include <os/logger.h>
@@ -7,44 +7,50 @@
 #include <kernel/xdm.h>
 #include <app.h>
 
-#define TRANSLATE_INPUT(S, X) SDL_GetGamepadButton(controller, S) << FirstBitLow(X)
+#define TRANSLATE_INPUT(S, X) SDL_GameControllerGetButton(controller, S) << FirstBitLow(X)
 #define VIBRATION_TIMEOUT_MS 5000
 
 class Controller
 {
 public:
-    SDL_Gamepad* controller{};
+    SDL_GameController* controller{};
     SDL_Joystick* joystick{};
-    SDL_JoystickID id{};
+    SDL_JoystickID id{ -1 };
     XAMINPUT_GAMEPAD state{};
     XAMINPUT_VIBRATION vibration{ 0, 0 };
+    int index{};
 
     Controller() = default;
 
-    Controller(SDL_Gamepad* controller) : controller(controller)
+    explicit Controller(int index) : Controller(SDL_GameControllerOpen(index))
+    {
+        this->index = index;
+    }
+
+    Controller(SDL_GameController* controller) : controller(controller)
     {
         if (!controller)
             return;
 
-        joystick = SDL_GetGamepadJoystick(controller);
-        id = SDL_GetJoystickID(joystick);
+        joystick = SDL_GameControllerGetJoystick(controller);
+        id = SDL_JoystickInstanceID(joystick);
     }
 
-    SDL_GamepadType GetControllerType() const
+    SDL_GameControllerType GetControllerType() const
     {
-        return SDL_GetGamepadType(controller);
+        return SDL_GameControllerGetType(controller);
     }
 
     hid::EInputDevice GetInputDevice() const
     {
         switch (GetControllerType())
         {
-            case SDL_GAMEPAD_TYPE_PS3:
-            case SDL_GAMEPAD_TYPE_PS4:
-            case SDL_GAMEPAD_TYPE_PS5:
+            case SDL_CONTROLLER_TYPE_PS3:
+            case SDL_CONTROLLER_TYPE_PS4:
+            case SDL_CONTROLLER_TYPE_PS5:
                 return hid::EInputDevice::PlayStation;
-            case SDL_GAMEPAD_TYPE_XBOX360:
-            case SDL_GAMEPAD_TYPE_XBOXONE:
+            case SDL_CONTROLLER_TYPE_XBOX360:
+            case SDL_CONTROLLER_TYPE_XBOXONE:
                 return hid::EInputDevice::Xbox;
             default:
                 return hid::EInputDevice::Unknown;
@@ -53,7 +59,7 @@ public:
 
     const char* GetControllerName() const
     {
-        auto result = SDL_GetGamepadName(controller);
+        auto result = SDL_GameControllerName(controller);
 
         if (!result)
             return "Unknown Device";
@@ -66,11 +72,11 @@ public:
         if (!controller)
             return;
 
-        SDL_CloseGamepad(controller);
+        SDL_GameControllerClose(controller);
 
         controller = nullptr;
         joystick = nullptr;
-        id = 0;
+        id = -1;
     }
 
     bool CanPoll()
@@ -85,14 +91,14 @@ public:
 
         auto& pad = state;
 
-        pad.sThumbLX = SDL_GetGamepadAxis(controller, SDL_GAMEPAD_AXIS_LEFTX);
-        pad.sThumbLY = ~SDL_GetGamepadAxis(controller, SDL_GAMEPAD_AXIS_LEFTY);
+        pad.sThumbLX = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX);
+        pad.sThumbLY = ~SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY);
 
-        pad.sThumbRX = SDL_GetGamepadAxis(controller, SDL_GAMEPAD_AXIS_RIGHTX);
-        pad.sThumbRY = ~SDL_GetGamepadAxis(controller, SDL_GAMEPAD_AXIS_RIGHTY);
+        pad.sThumbRX = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX);
+        pad.sThumbRY = ~SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY);
 
-        pad.bLeftTrigger = SDL_GetGamepadAxis(controller, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) >> 7;
-        pad.bRightTrigger = SDL_GetGamepadAxis(controller, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) >> 7;
+        pad.bLeftTrigger = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT) >> 7;
+        pad.bRightTrigger = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) >> 7;
     }
 
     void Poll()
@@ -104,25 +110,25 @@ public:
 
         pad.wButtons = 0;
 
-        pad.wButtons |= TRANSLATE_INPUT(SDL_GAMEPAD_BUTTON_DPAD_UP, XAMINPUT_GAMEPAD_DPAD_UP);
-        pad.wButtons |= TRANSLATE_INPUT(SDL_GAMEPAD_BUTTON_DPAD_DOWN, XAMINPUT_GAMEPAD_DPAD_DOWN);
-        pad.wButtons |= TRANSLATE_INPUT(SDL_GAMEPAD_BUTTON_DPAD_LEFT, XAMINPUT_GAMEPAD_DPAD_LEFT);
-        pad.wButtons |= TRANSLATE_INPUT(SDL_GAMEPAD_BUTTON_DPAD_RIGHT, XAMINPUT_GAMEPAD_DPAD_RIGHT);
+        pad.wButtons |= TRANSLATE_INPUT(SDL_CONTROLLER_BUTTON_DPAD_UP, XAMINPUT_GAMEPAD_DPAD_UP);
+        pad.wButtons |= TRANSLATE_INPUT(SDL_CONTROLLER_BUTTON_DPAD_DOWN, XAMINPUT_GAMEPAD_DPAD_DOWN);
+        pad.wButtons |= TRANSLATE_INPUT(SDL_CONTROLLER_BUTTON_DPAD_LEFT, XAMINPUT_GAMEPAD_DPAD_LEFT);
+        pad.wButtons |= TRANSLATE_INPUT(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, XAMINPUT_GAMEPAD_DPAD_RIGHT);
 
-        pad.wButtons |= TRANSLATE_INPUT(SDL_GAMEPAD_BUTTON_START, XAMINPUT_GAMEPAD_START);
-        pad.wButtons |= TRANSLATE_INPUT(SDL_GAMEPAD_BUTTON_BACK, XAMINPUT_GAMEPAD_BACK);
-        pad.wButtons |= TRANSLATE_INPUT(SDL_GAMEPAD_BUTTON_TOUCHPAD, XAMINPUT_GAMEPAD_BACK);
+        pad.wButtons |= TRANSLATE_INPUT(SDL_CONTROLLER_BUTTON_START, XAMINPUT_GAMEPAD_START);
+        pad.wButtons |= TRANSLATE_INPUT(SDL_CONTROLLER_BUTTON_BACK, XAMINPUT_GAMEPAD_BACK);
+        pad.wButtons |= TRANSLATE_INPUT(SDL_CONTROLLER_BUTTON_TOUCHPAD, XAMINPUT_GAMEPAD_BACK);
 
-        pad.wButtons |= TRANSLATE_INPUT(SDL_GAMEPAD_BUTTON_LEFT_STICK, XAMINPUT_GAMEPAD_LEFT_THUMB);
-        pad.wButtons |= TRANSLATE_INPUT(SDL_GAMEPAD_BUTTON_RIGHT_STICK, XAMINPUT_GAMEPAD_RIGHT_THUMB);
+        pad.wButtons |= TRANSLATE_INPUT(SDL_CONTROLLER_BUTTON_LEFTSTICK, XAMINPUT_GAMEPAD_LEFT_THUMB);
+        pad.wButtons |= TRANSLATE_INPUT(SDL_CONTROLLER_BUTTON_RIGHTSTICK, XAMINPUT_GAMEPAD_RIGHT_THUMB);
 
-        pad.wButtons |= TRANSLATE_INPUT(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, XAMINPUT_GAMEPAD_LEFT_SHOULDER);
-        pad.wButtons |= TRANSLATE_INPUT(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, XAMINPUT_GAMEPAD_RIGHT_SHOULDER);
+        pad.wButtons |= TRANSLATE_INPUT(SDL_CONTROLLER_BUTTON_LEFTSHOULDER, XAMINPUT_GAMEPAD_LEFT_SHOULDER);
+        pad.wButtons |= TRANSLATE_INPUT(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, XAMINPUT_GAMEPAD_RIGHT_SHOULDER);
 
-        pad.wButtons |= TRANSLATE_INPUT(SDL_GAMEPAD_BUTTON_SOUTH, XAMINPUT_GAMEPAD_A);
-        pad.wButtons |= TRANSLATE_INPUT(SDL_GAMEPAD_BUTTON_EAST, XAMINPUT_GAMEPAD_B);
-        pad.wButtons |= TRANSLATE_INPUT(SDL_GAMEPAD_BUTTON_WEST, XAMINPUT_GAMEPAD_X);
-        pad.wButtons |= TRANSLATE_INPUT(SDL_GAMEPAD_BUTTON_NORTH, XAMINPUT_GAMEPAD_Y);
+        pad.wButtons |= TRANSLATE_INPUT(SDL_CONTROLLER_BUTTON_A, XAMINPUT_GAMEPAD_A);
+        pad.wButtons |= TRANSLATE_INPUT(SDL_CONTROLLER_BUTTON_B, XAMINPUT_GAMEPAD_B);
+        pad.wButtons |= TRANSLATE_INPUT(SDL_CONTROLLER_BUTTON_X, XAMINPUT_GAMEPAD_X);
+        pad.wButtons |= TRANSLATE_INPUT(SDL_CONTROLLER_BUTTON_Y, XAMINPUT_GAMEPAD_Y);
     }
 
     void SetVibration(const XAMINPUT_VIBRATION& vibration)
@@ -132,12 +138,12 @@ public:
 
         this->vibration = vibration;
 
-        SDL_RumbleGamepad(controller, vibration.wLeftMotorSpeed * 256, vibration.wRightMotorSpeed * 256, VIBRATION_TIMEOUT_MS);
+        SDL_GameControllerRumble(controller, vibration.wLeftMotorSpeed * 256, vibration.wRightMotorSpeed * 256, VIBRATION_TIMEOUT_MS);
     }
 
     void SetLED(const uint8_t r, const uint8_t g, const uint8_t b) const
     {
-        SDL_SetGamepadLED(controller, r, g, b);
+        SDL_GameControllerSetLED(controller, r, g, b);
     }
 };
 
@@ -163,7 +169,7 @@ inline size_t FindFreeController()
     return -1;
 }
 
-inline Controller* FindController(SDL_JoystickID which)
+inline Controller* FindController(int which)
 {
     for (auto& controller : g_controllers)
     {
@@ -235,17 +241,17 @@ static void SetControllerTimeOfDayLED(Controller& controller, EPlayerCharacter p
     controller.SetLED(r, g, b);
 }
 
-bool HID_OnSDLEvent(void*, SDL_Event* event)
+int HID_OnSDLEvent(void*, SDL_Event* event)
 {
     switch (event->type)
     {
-        case SDL_EVENT_GAMEPAD_ADDED:
+        case SDL_CONTROLLERDEVICEADDED:
         {
             const auto freeIndex = FindFreeController();
 
             if (freeIndex != -1)
             {
-                auto controller = Controller(SDL_OpenGamepad(event->gdevice.which));
+                auto controller = Controller(event->cdevice.which);
 
                 g_controllers[freeIndex] = controller;
 
@@ -255,9 +261,9 @@ bool HID_OnSDLEvent(void*, SDL_Event* event)
             break;
         }
 
-        case SDL_EVENT_GAMEPAD_REMOVED:
+        case SDL_CONTROLLERDEVICEREMOVED:
         {
-            auto* controller = FindController(event->gdevice.which);
+            auto* controller = FindController(event->cdevice.which);
 
             if (controller)
                 controller->Close();
@@ -265,21 +271,21 @@ bool HID_OnSDLEvent(void*, SDL_Event* event)
             break;
         }
 
-        case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
-        case SDL_EVENT_GAMEPAD_BUTTON_UP:
-        case SDL_EVENT_GAMEPAD_AXIS_MOTION:
-        case SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN:
+        case SDL_CONTROLLERBUTTONDOWN:
+        case SDL_CONTROLLERBUTTONUP:
+        case SDL_CONTROLLERAXISMOTION:
+        case SDL_CONTROLLERTOUCHPADDOWN:
         {
-            auto* controller = FindController(event->gdevice.which);
+            auto* controller = FindController(event->cdevice.which);
 
             if (!controller)
                 break;
 
-            if (event->type == SDL_EVENT_GAMEPAD_AXIS_MOTION)
+            if (event->type == SDL_CONTROLLERAXISMOTION)
             {
-                if (abs(event->gaxis.value) > 8000)
+                if (abs(event->caxis.value) > 8000)
                 {
-                    SDL_HideCursor();
+                    SDL_ShowCursor(SDL_DISABLE);
                     SetControllerInputDevice(controller);
                 }
 
@@ -287,7 +293,7 @@ bool HID_OnSDLEvent(void*, SDL_Event* event)
             }
             else
             {
-                SDL_HideCursor();
+                SDL_ShowCursor(SDL_DISABLE);
                 SetControllerInputDevice(controller);
 
                 controller->Poll();
@@ -296,33 +302,36 @@ bool HID_OnSDLEvent(void*, SDL_Event* event)
             break;
         }
 
-        case SDL_EVENT_KEY_DOWN:
-        case SDL_EVENT_KEY_UP:
+        case SDL_KEYDOWN:
+        case SDL_KEYUP:
             hid::g_inputDevice = hid::EInputDevice::Keyboard;
             break;
 
-        case SDL_EVENT_MOUSE_MOTION:
-        case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        case SDL_EVENT_MOUSE_BUTTON_UP:
+        case SDL_MOUSEMOTION:
+        case SDL_MOUSEBUTTONDOWN:
+        case SDL_MOUSEBUTTONUP:
         {
             if (!GameWindow::IsFullscreen() || GameWindow::s_isFullscreenCursorVisible)
-                SDL_ShowCursor();
+                SDL_ShowCursor(SDL_ENABLE);
 
             hid::g_inputDevice = hid::EInputDevice::Mouse;
 
             break;
         }
 
-        case SDL_EVENT_WINDOW_FOCUS_LOST:
+        case SDL_WINDOWEVENT:
         {
-            // Stop vibrating controllers on focus lost.
-            for (auto& controller : g_controllers)
-                controller.SetVibration({ 0, 0 });
+            if (event->window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+            {
+                // Stop vibrating controllers on focus lost.
+                for (auto& controller : g_controllers)
+                    controller.SetVibration({ 0, 0 });
+            }
 
             break;
         }
 
-        case SDL_EVENT_USER_PLAYER_CHAR:
+        case SDL_USER_PLAYER_CHAR:
         {
             for (auto& controller : g_controllers)
                 SetControllerTimeOfDayLED(controller, static_cast<EPlayerCharacter>(event->user.code));
@@ -331,7 +340,7 @@ bool HID_OnSDLEvent(void*, SDL_Event* event)
         }
     }
 
-    return true;
+    return 0;
 }
 
 void hid::Init()
@@ -340,20 +349,24 @@ void hid::Init()
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_GAMECUBE, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS3, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4_RUMBLE, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5_PLAYER_LED, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5_RUMBLE, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_WII, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAM, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAMDECK, "1");
     SDL_SetHint(SDL_HINT_XINPUT_ENABLED, "1");
+    
+    SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, "0"); // Uses Button Labels. This hint is disabled for Nintendo Controllers.
 
     SDL_InitSubSystem(SDL_INIT_EVENTS);
     SDL_AddEventWatch(HID_OnSDLEvent, nullptr);
 
-    SDL_InitSubSystem(SDL_INIT_GAMEPAD);
+    SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER);
 
     // Load controller mappings from SDL_GameControllerDB
-    if (int mappings = SDL_AddGamepadMappingsFromFile("gamecontrollerdb.txt"); mappings > 0) {
+    if (int mappings = SDL_GameControllerAddMappingsFromFile("gamecontrollerdb.txt"); mappings > 0) {
         LOGFN("Loaded {} controller mapping(s) from SDL_GameControllerDB ({})", mappings, "gamecontrollerdb.txt");
     }
 }

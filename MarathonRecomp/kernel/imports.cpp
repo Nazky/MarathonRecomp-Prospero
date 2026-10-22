@@ -765,15 +765,15 @@ void RtlLeaveCriticalSection(XRTL_CRITICAL_SECTION* cs)
 
 void RtlEnterCriticalSection(XRTL_CRITICAL_SECTION* cs)
 {
-    be<uint32_t> thisThread = g_ppcContext->r13.u32;
+    uint32_t thisThread = g_ppcContext->r13.u32;
     // printf("RtlEnterCriticalSection %x %x %x %x\n", thisThread, cs->OwningThread, cs->LockCount, cs->RecursionCount);
-    assert(thisThread != NULL);
+    assert(thisThread != 0);
 
     std::atomic_ref owningThread(cs->OwningThread);
 
     while (true) 
     {
-        be<uint32_t> previousOwner = 0;
+        uint32_t previousOwner = 0;
 
         if (owningThread.compare_exchange_weak(previousOwner, thisThread) || previousOwner == thisThread)
         {
@@ -860,13 +860,13 @@ uint64_t KeQueryPerformanceFrequency()
 
 void MmFreePhysicalMemory(uint32_t type, uint32_t guestAddress)
 {
-    if (guestAddress != NULL)
+    if (guestAddress != 0)
         g_userHeap.Free(g_memory.Translate(guestAddress));
 }
 
 bool VdPersistDisplay(uint32_t a1, uint32_t* a2)
 {
-    *a2 = NULL;
+    *a2 = 0;
     return false;
 }
 
@@ -1282,12 +1282,12 @@ void XexGetModuleHandle()
 bool RtlTryEnterCriticalSection(XRTL_CRITICAL_SECTION* cs)
 {
     // printf("RtlTryEnterCriticalSection\n");
-    be<uint32_t> thisThread = g_ppcContext->r13.u32;
-    assert(thisThread != NULL);
+    uint32_t thisThread = g_ppcContext->r13.u32;
+    assert(thisThread != 0);
 
     std::atomic_ref owningThread(cs->OwningThread);
 
-    be<uint32_t> previousOwner = 0;
+    uint32_t previousOwner = 0;
 
     if (owningThread.compare_exchange_weak(previousOwner, thisThread) || previousOwner == thisThread)
     {

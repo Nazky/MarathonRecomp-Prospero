@@ -1,5 +1,11 @@
 #include "imgui_font_builder.h"
 
+#if defined(__PROSPERO__)
+// The PS5 build loads the embedded ImGui font-atlas snapshot; it never builds
+// glyphs at runtime, so the desktop MSDF dependency is unnecessary here.
+ImFontBuilderIO g_fontBuilderIO = {};
+#else
+
 #include <msdf-atlas-gen/msdf-atlas-gen.h>
 
 // Taken directly from msdf-atlas-gen, modified to support custom rectangles.
@@ -326,3 +332,4 @@ static bool FontBuilder_Build(ImFontAtlas* atlas)
 }
 
 ImFontBuilderIO g_fontBuilderIO = { FontBuilder_Build };
+#endif

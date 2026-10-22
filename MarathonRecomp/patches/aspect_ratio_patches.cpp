@@ -1,4 +1,5 @@
 #include "aspect_ratio_patches.h"
+#include <api/Marathon.h>
 #include <gpu/video.h>
 #include <hid/hid.h>
 #include <patches/hook_event.h>
@@ -87,6 +88,17 @@ struct ChevronAnim
 static std::unordered_map<int32_t, ChevronAnim> g_bgArrows{};
 static std::unordered_map<int32_t, ChevronAnim> g_fgArrows{};
 
+static class LoadingPillarboxEvent : public HookEvent
+{
+public:
+    void Update(float deltaTime) override
+    {
+        if (g_aspectRatio > WIDE_ASPECT_RATIO)
+            BlackBar::Show();
+    }
+}
+g_loadingPillarboxEvent{};
+
 static class ChevronAnimResetEvent : public ContextHookEvent<Sonicteam::MainMenuTask>
 {
     float m_chevronAspectRatio{};
@@ -129,6 +141,7 @@ float ComputeScale(float aspectRatio)
 
 void AspectRatioPatches::Init()
 {
+    LoadingPatches::Events.push_back(&g_loadingPillarboxEvent);
     MainMenuTaskPatches::s_events.push_back(&g_chevronAnimResetEvent);
 }
 
@@ -298,7 +311,7 @@ PPC_FUNC(sub_82617570)
 PPC_FUNC_IMPL(__imp__sub_82656650);
 PPC_FUNC(sub_82656650)
 {
-    if (ctx.r4.u32 != NULL && PPC_LOAD_U32(ctx.r4.u32) == 0x4649584E && PPC_LOAD_U32(ctx.r4.u32 + 0x20) == 0x6E43504A) // NXIF, nCPJ
+    if (ctx.r4.u32 != 0 && PPC_LOAD_U32(ctx.r4.u32) == 0x4649584E && PPC_LOAD_U32(ctx.r4.u32 + 0x20) == 0x6E43504A) // NXIF, nCPJ
     {
         uint32_t fileSize = PPC_LOAD_U32(ctx.r4.u32 + 0x14);
     
@@ -1530,20 +1543,6 @@ void ReplaceTextVariables(Sonicteam::TextEntity* pTextEntity)
     }
 }
 
-void SetTextEntityModifier(Sonicteam::TextEntity* pTextEntity, uint64_t flags)
-{
-    if (!pTextEntity)
-        return;
-
-    const auto pTextModifier = reinterpret_cast<uint64_t*>(
-        reinterpret_cast<uint8_t*>(pTextEntity) + sizeof(Sonicteam::TextEntity));
-
-    *pTextModifier = flags;
-
-    pTextEntity->m_FieldDD = true;
-    pTextEntity->Update();
-}
-
 void TextEntityAlloc(PPCRegister& r3)
 {
     r3.u32 += sizeof(uint64_t);
@@ -1640,6 +1639,19 @@ PPC_FUNC(sub_8262D868)
     pTextEntity->m_ScaleY = scaleY;
 
     ReplaceTextVariables(pTextEntity);
+}
+
+void SetTextEntityModifier(Sonicteam::TextEntity* pTextEntity, uint64_t flags)
+{
+    if (!pTextEntity)
+        return;
+
+    auto pTextModifier = (uint64_t*)(reinterpret_cast<uint8_t*>(pTextEntity) + sizeof(Sonicteam::TextEntity));
+
+    *pTextModifier = flags;
+
+    pTextEntity->m_FieldDD = true;
+    pTextEntity->Update();
 }
 
 // Sonicteam::HUDMainMenu::Destroy
@@ -1951,9 +1963,9 @@ const xxHashMap<CsdModifier> g_csdModifiers =
     // loading
     { HashStr("sprite/loading/loading/Scene_0000/Loading"), { CSD_ALIGN_BOTTOM_RIGHT | CSD_MODIFIER_NARROW_ONLY } },
     { HashStr("sprite/loading/loading/Scene_0000/Loading_02"), { CSD_ALIGN_BOTTOM_RIGHT | CSD_MODIFIER_NARROW_ONLY } },
-    { HashStr("sprite/loading/loading/Scene_0000/arrow_01"), { .Flags = CSD_ALIGN_BOTTOM_RIGHT | CSD_OFFSET_SCALE_LEFT, .CornerMax = 1281.013f } },
-    { HashStr("sprite/loading/loading/Scene_0000/arrow_02"), { .Flags = CSD_ALIGN_BOTTOM_RIGHT | CSD_OFFSET_SCALE_LEFT, .CornerMax = 1281.013f } },
-    { HashStr("sprite/loading/loading/Scene_0000/arrow_03"), { .Flags = CSD_ALIGN_BOTTOM_RIGHT | CSD_OFFSET_SCALE_LEFT, .CornerMax = 1281.013f } },
+    { HashStr("sprite/loading/loading/Scene_0000/arrow_01"), { CSD_ALIGN_BOTTOM_RIGHT | CSD_MODIFIER_NARROW_ONLY } },
+    { HashStr("sprite/loading/loading/Scene_0000/arrow_02"), { CSD_ALIGN_BOTTOM_RIGHT | CSD_MODIFIER_NARROW_ONLY } },
+    { HashStr("sprite/loading/loading/Scene_0000/arrow_03"), { CSD_ALIGN_BOTTOM_RIGHT | CSD_MODIFIER_NARROW_ONLY } },
 
     // maindisplay
     { HashStr("sprite/maindisplay/power"), { CSD_ALIGN_BOTTOM_RIGHT | CSD_SCALE } },
@@ -2036,7 +2048,7 @@ const xxHashMap<CsdModifier> g_csdModifiers =
     // pausemenu
     { HashStr("sprite/pausemenu/pausemenu/pause_menu"), { CSD_SCALE } },
     { HashStr("sprite/pausemenu/pausemenu/pause_menu_cursor"), { CSD_SCALE } },
-    { HashStr("sprite/pausemenu/pausemenu/mission"), { CSD_ALIGN_BOTTOM | CSD_SCALE } },
+    { HashStr("sprite/pausemenu/pausemenu/mission"), { CSD_SCALE } },
 
     // radarmap_cover
     { HashStr("sprite/radarmap_cover/radarmap_cover/Scene_0000"), { CSD_RADARMAP | CSD_ALIGN_TOP_RIGHT | CSD_SCALE } },

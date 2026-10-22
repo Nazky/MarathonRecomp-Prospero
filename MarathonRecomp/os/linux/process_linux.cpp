@@ -1,9 +1,15 @@
 #include <os/process.h>
 
+#include <limits.h>
 #include <signal.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 std::filesystem::path os::process::GetExecutablePath()
 {
+#if defined(__PROSPERO__)
+    return std::filesystem::path("/app0/eboot.bin");
+#else
     char exePath[PATH_MAX] = {};
     if (readlink("/proc/self/exe", exePath, PATH_MAX) > 0)
     {
@@ -13,11 +19,16 @@ std::filesystem::path os::process::GetExecutablePath()
     {
         return std::filesystem::path();
     }
+#endif
 }
 
 std::filesystem::path os::process::GetExecutableRoot()
 {
+#if defined(__PROSPERO__)
+    return std::filesystem::path("/app0");
+#else
     return GetExecutablePath().remove_filename();
+#endif
 }
 
 std::filesystem::path os::process::GetWorkingDirectory()
@@ -41,6 +52,13 @@ bool os::process::SetWorkingDirectory(const std::filesystem::path& path)
 
 bool os::process::StartProcess(const std::filesystem::path& path, const std::vector<std::string>& args, std::filesystem::path work)
 {
+#if defined(__PROSPERO__)
+    // The PS5 title cannot spawn desktop child processes.
+    (void)path;
+    (void)args;
+    (void)work;
+    return false;
+#else
     pid_t pid = fork();
     if (pid < 0)
         return false;
@@ -64,15 +82,16 @@ bool os::process::StartProcess(const std::filesystem::path& path, const std::vec
     }
 
     return true;
+#endif
 }
 
 void os::process::CheckConsole()
 {
-    // Always visible on Linux.
+    // The Linux and PS5 builds do not have a separate console window.
     g_consoleVisible = true;
 }
 
 void os::process::ShowConsole()
 {
-    // Unnecessary on Linux.
+    // No separate console window to show on Linux or PS5.
 }

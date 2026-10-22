@@ -2,6 +2,11 @@
 // the preprocessed output. The header is only going to have the declarations this way.
 
 CONFIG_DEFINE_ENUM_LOCALISED("System", ELanguage, Language, ELanguage::English, true);
+#if defined(__PROSPERO__)
+CONFIG_DEFINE_HIDDEN("System", bool, AutoLanguage, true, false);
+CONFIG_DEFINE_HIDDEN("System", bool, PS5MaxDefaultsMigrated, false, false);
+CONFIG_DEFINE_HIDDEN("System", bool, PS5FPS60DefaultMigrated, false, false);
+#endif
 CONFIG_DEFINE_ENUM_LOCALISED("System", EVoiceLanguage, VoiceLanguage, EVoiceLanguage::English, false);
 CONFIG_DEFINE_LOCALISED("System", bool, Subtitles, true, false);
 CONFIG_DEFINE_LOCALISED("System", bool, Hints, true, false);
@@ -13,7 +18,11 @@ CONFIG_DEFINE("System", bool, ShowConsole, false, false);
 CONFIG_DEFINE_ENUM_LOCALISED("Input", ECameraRotationMode, HorizontalCamera, ECameraRotationMode::Reverse, false);
 CONFIG_DEFINE_ENUM_LOCALISED("Input", ECameraRotationMode, VerticalCamera, ECameraRotationMode::Normal, false);
 CONFIG_DEFINE_LOCALISED("Input", bool, AllowBackgroundInput, false, false);
+#if defined(__PROSPERO__)
+CONFIG_DEFINE_ENUM_LOCALISED("Input", EControllerIcons, ControllerIcons, EControllerIcons::PlayStation, false);
+#else
 CONFIG_DEFINE_ENUM_LOCALISED("Input", EControllerIcons, ControllerIcons, EControllerIcons::Auto, false);
+#endif
 CONFIG_DEFINE_ENUM_LOCALISED("Input", ELightDash, LightDash, ELightDash::X, false);
 CONFIG_DEFINE_ENUM_LOCALISED("Input", ESlidingAttack, SlidingAttack, ESlidingAttack::X, false);
 
@@ -49,29 +58,46 @@ CONFIG_DEFINE_LOCALISED("Audio", bool, MusicAttenuation, false, false);
 
 CONFIG_DEFINE("Video", std::string, GraphicsDevice, "", true);
 CONFIG_DEFINE_ENUM("Video", EGraphicsAPI, GraphicsAPI, EGraphicsAPI::Auto, true);
-CONFIG_DEFINE("Video", int32_t, WindowX, CONFIG_WINDOWPOS_CENTRED, false);
-CONFIG_DEFINE("Video", int32_t, WindowY, CONFIG_WINDOWPOS_CENTRED, false);
+CONFIG_DEFINE("Video", int32_t, WindowX, WINDOWPOS_CENTRED, false);
+CONFIG_DEFINE("Video", int32_t, WindowY, WINDOWPOS_CENTRED, false);
 CONFIG_DEFINE_LOCALISED("Video", int32_t, WindowSize, -1, false);
 CONFIG_DEFINE("Video", int32_t, WindowWidth, 1280, false);
 CONFIG_DEFINE("Video", int32_t, WindowHeight, 720, false);
 CONFIG_DEFINE_ENUM("Video", EWindowState, WindowState, EWindowState::Normal, false);
 CONFIG_DEFINE_LOCALISED("Video", int32_t, Monitor, 0, false);
 CONFIG_DEFINE_ENUM_LOCALISED("Video", EAspectRatio, AspectRatio, EAspectRatio::Auto, false);
+// At PS5's 3840x2160 direct-display mode, 1.0 keeps the internal render target at 4K.
 CONFIG_DEFINE_LOCALISED("Video", float, ResolutionScale, 1.0f, false);
 CONFIG_DEFINE_LOCALISED("Video", bool, Fullscreen, true, false);
 CONFIG_DEFINE_LOCALISED("Video", bool, VSync, true, false);
 CONFIG_DEFINE_ENUM("Video", ETripleBuffering, TripleBuffering, ETripleBuffering::Auto, false);
+#if defined(__PROSPERO__)
 CONFIG_DEFINE_LOCALISED("Video", int32_t, FPS, 60, false);
+#else
+CONFIG_DEFINE_LOCALISED("Video", int32_t, FPS, 60, false);
+#endif
 CONFIG_DEFINE("Video", bool, ShowFPS, false, false);
+CONFIG_DEFINE_LOCALISED("Video", bool, ShowSystemInfoOverlay, false, false);
 CONFIG_DEFINE("Video", uint32_t, MaxFrameLatency, 2, false);
 CONFIG_DEFINE_LOCALISED("Video", float, Brightness, 0.5f, false);
+#if defined(__PROSPERO__)
+CONFIG_DEFINE_ENUM_LOCALISED("Video", EAntiAliasing, AntiAliasing, EAntiAliasing::MSAA8x, false);
+#else
 CONFIG_DEFINE_ENUM_LOCALISED("Video", EAntiAliasing, AntiAliasing, EAntiAliasing::MSAA4x, false);
+#endif
 CONFIG_DEFINE_LOCALISED("Video", bool, TransparencyAntiAliasing, true, false);
 CONFIG_DEFINE("Video", uint32_t, AnisotropicFiltering, 16, false);
+#if defined(__PROSPERO__)
+CONFIG_DEFINE_ENUM_LOCALISED("Video", EShadowResolution, ShadowResolution, EShadowResolution::x8192, false);
+CONFIG_DEFINE_ENUM_LOCALISED("Video", EReflectionResolution, ReflectionResolution, EReflectionResolution::Full, false);
+CONFIG_DEFINE_ENUM_LOCALISED("Video", ERadialBlur, RadialBlur, ERadialBlur::Enhanced, false);
+CONFIG_DEFINE_ENUM_LOCALISED("Video", ECutsceneAspectRatio, CutsceneAspectRatio, ECutsceneAspectRatio::Unlocked, false);
+#else
 CONFIG_DEFINE_ENUM_LOCALISED("Video", EShadowResolution, ShadowResolution, EShadowResolution::x4096, false);
-CONFIG_DEFINE_ENUM_LOCALISED("Video", EReflectionResolution, ReflectionResolution, EReflectionResolution::Half, false);
+CONFIG_DEFINE_ENUM_LOCALISED("Video", EReflectionResolution, EReflectionResolution::Half, false);
 CONFIG_DEFINE_ENUM_LOCALISED("Video", ERadialBlur, RadialBlur, ERadialBlur::Original, false);
 CONFIG_DEFINE_ENUM_LOCALISED("Video", ECutsceneAspectRatio, CutsceneAspectRatio, ECutsceneAspectRatio::Original, false);
+#endif
 CONFIG_DEFINE_ENUM_LOCALISED("Video", EUIAlignmentMode, UIAlignmentMode, EUIAlignmentMode::Edge, false);
 
 CONFIG_DEFINE_HIDDEN("Codes", bool, AntigravityRetainsMomentum, false, false);
@@ -85,8 +111,8 @@ CONFIG_DEFINE_HIDDEN("Codes", bool, DisableLowResolutionFontOnCustomUI, false, f
 CONFIG_DEFINE_HIDDEN("Codes", bool, DisablePushState, false, false);
 CONFIG_DEFINE_HIDDEN("Codes", bool, DisableTitleInputDelay, false, false);
 CONFIG_DEFINE_HIDDEN("Codes", bool, EnableDebugMode, false, false);
-CONFIG_DEFINE_HIDDEN("Codes", bool, FixEnvironmentMaps, true, false);
-CONFIG_DEFINE_HIDDEN("Codes", bool, FixPowerUpJingleDuration, true, false);
+CONFIG_DEFINE_HIDDEN("Codes", bool, FixEnvironmentMaps, false, false);
+CONFIG_DEFINE_HIDDEN("Codes", bool, FixPowerUpJingleDuration, false, false);
 CONFIG_DEFINE_HIDDEN("Codes", bool, HUDToggleKey, false, false);
 CONFIG_DEFINE_HIDDEN("Codes", bool, InfiniteLives, false, false);
 CONFIG_DEFINE_HIDDEN("Codes", bool, MidairControlForMachSpeed, false, false);
@@ -96,14 +122,11 @@ CONFIG_DEFINE_HIDDEN("Codes", bool, RestoreChaosBoostJump, false, false);
 CONFIG_DEFINE_HIDDEN("Codes", bool, RestoreChaosSpearFlips, false, false);
 CONFIG_DEFINE_HIDDEN("Codes", bool, RestoreContextualHUDColours, false, false);
 CONFIG_DEFINE_HIDDEN("Codes", bool, RestoreDemoCameraMode, false, false);
-CONFIG_DEFINE_HIDDEN("Codes", bool, RestoreLoadingTransition, false, false);
-CONFIG_DEFINE_HIDDEN("Codes", bool, RestorePauseMissionText, false, false);
 CONFIG_DEFINE_HIDDEN("Codes", bool, RestoreSonicActionGauge, false, false);
 CONFIG_DEFINE_HIDDEN("Codes", bool, SkipIntroLogos, false, false);
 CONFIG_DEFINE_HIDDEN("Codes", bool, TailsGauge, false, false);
 CONFIG_DEFINE_HIDDEN("Codes", bool, UnlimitedAntigravity, false, false);
 CONFIG_DEFINE_HIDDEN("Codes", bool, UseOfficialAchievementText, false, false);
 CONFIG_DEFINE_HIDDEN("Codes", bool, UseOfficialTitleOnTitleBar, false, true);
-CONFIG_DEFINE_HIDDEN("Codes", bool, UsePS3TypoFixes, true, false);
 
 CONFIG_DEFINE("Update", time_t, LastChecked, 0, false);

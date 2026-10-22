@@ -7,14 +7,18 @@
 #include <app.h>
 #include <bc_diff.h>
 #include <cpu/guest_thread.h>
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <cmath>
+#include <utility>
 #include <decompressor.h>
 #include <kernel/function.h>
 #include <kernel/heap.h>
 #include <hid/hid.h>
 #include <kernel/memory.h>
 #include <kernel/xdbf.h>
+#include <locale/locale.h>
 #include <plume_render_interface.h>
 #include <res/bc_diff/button_bc_diff.bin.h>
 #include <res/font/im_font_atlas.dds.h>
@@ -27,20 +31,24 @@
 #include <ui/imgui_utils.h>
 #include <ui/installer_wizard.h>
 #include <ui/message_window.h>
+#include <ui/mods_menu.h>
 #include <ui/options_menu.h>
 #include <ui/game_window.h>
 #include <ui/black_bar.h>
 #include <patches/aspect_ratio_patches.h>
-#include <patches/hook_event.h>
-#include <patches/loading_patches.h>
 #include <user/config.h>
+#include <mod/mod_loader.h>
 #include <sdl_listener.h>
 #include <xxHashMap.h>
 #include <os/process.h>
-#include <os/thread.h>
+#include <user/paths.h>
+#include <ps5vk_overlay.h>
+
+#if defined(__PROSPERO__)
+extern "C" int sceKernelGetSocSensorTemperature(int sensor, int* celsius);
+#endif
 
 #if defined(ASYNC_PSO_DEBUG) || defined(PSO_CACHING)
-#include <user/paths.h>
 #include <magic_enum/magic_enum.hpp>
 #endif
 
@@ -48,59 +56,83 @@
 #include "../../tools/XenosRecomp/XenosRecomp/shader_common.h"
 
 #ifdef MARATHON_RECOMP_D3D12
-#include "gpu/shader/hlsl/conditional_survey_ps.hlsl.dxil.h"
-#include "gpu/shader/hlsl/copy_vs.hlsl.dxil.h"
-#include "gpu/shader/hlsl/copy_color_ps.hlsl.dxil.h"
-#include "gpu/shader/hlsl/copy_depth_ps.hlsl.dxil.h"
-#include "gpu/shader/hlsl/enhanced_burnout_blur_vs.hlsl.dxil.h"
-#include "gpu/shader/hlsl/enhanced_burnout_blur_ps.hlsl.dxil.h"
-#include "gpu/shader/hlsl/movie_ps.hlsl.dxil.h"
-#include "gpu/shader/hlsl/gamma_correction_ps.hlsl.dxil.h"
-#include "gpu/shader/hlsl/imgui_ps.hlsl.dxil.h"
-#include "gpu/shader/hlsl/imgui_vs.hlsl.dxil.h"
-#include "gpu/shader/hlsl/resolve_msaa_color_2x.hlsl.dxil.h"
-#include "gpu/shader/hlsl/resolve_msaa_color_4x.hlsl.dxil.h"
-#include "gpu/shader/hlsl/resolve_msaa_color_8x.hlsl.dxil.h"
-#include "gpu/shader/hlsl/resolve_msaa_depth_2x.hlsl.dxil.h"
-#include "gpu/shader/hlsl/resolve_msaa_depth_4x.hlsl.dxil.h"
-#include "gpu/shader/hlsl/resolve_msaa_depth_8x.hlsl.dxil.h"
+#include "shader/hlsl/blend_color_alpha_ps.hlsl.dxil.h"
+#include "shader/hlsl/conditional_survey_ps.hlsl.dxil.h"
+#include "shader/hlsl/copy_vs.hlsl.dxil.h"
+#include "shader/hlsl/copy_color_ps.hlsl.dxil.h"
+#include "shader/hlsl/copy_depth_ps.hlsl.dxil.h"
+#include "shader/hlsl/csd_filter_ps.hlsl.dxil.h"
+#include "shader/hlsl/csd_no_tex_vs.hlsl.dxil.h"
+#include "shader/hlsl/csd_vs.hlsl.dxil.h"
+#include "shader/hlsl/enhanced_burnout_blur_vs.hlsl.dxil.h"
+#include "shader/hlsl/enhanced_burnout_blur_ps.hlsl.dxil.h"
+#include "shader/hlsl/movie_ps.hlsl.dxil.h"
+#include "shader/hlsl/gamma_correction_ps.hlsl.dxil.h"
+#include "shader/hlsl/gaussian_blur_3x3.hlsl.dxil.h"
+#include "shader/hlsl/gaussian_blur_5x5.hlsl.dxil.h"
+#include "shader/hlsl/gaussian_blur_7x7.hlsl.dxil.h"
+#include "shader/hlsl/gaussian_blur_9x9.hlsl.dxil.h"
+#include "shader/hlsl/imgui_ps.hlsl.dxil.h"
+#include "shader/hlsl/imgui_vs.hlsl.dxil.h"
+#include "shader/hlsl/resolve_msaa_color_2x.hlsl.dxil.h"
+#include "shader/hlsl/resolve_msaa_color_4x.hlsl.dxil.h"
+#include "shader/hlsl/resolve_msaa_color_8x.hlsl.dxil.h"
+#include "shader/hlsl/resolve_msaa_depth_2x.hlsl.dxil.h"
+#include "shader/hlsl/resolve_msaa_depth_4x.hlsl.dxil.h"
+#include "shader/hlsl/resolve_msaa_depth_8x.hlsl.dxil.h"
 #endif
 
 #ifdef MARATHON_RECOMP_METAL
-#include "gpu/shader/msl/conditional_survey_ps.metal.metallib.h"
-#include "gpu/shader/msl/copy_vs.metal.metallib.h"
-#include "gpu/shader/msl/copy_color_ps.metal.metallib.h"
-#include "gpu/shader/msl/copy_depth_ps.metal.metallib.h"
-#include "gpu/shader/msl/enhanced_burnout_blur_vs.metal.metallib.h"
-#include "gpu/shader/msl/enhanced_burnout_blur_ps.metal.metallib.h"
-#include "gpu/shader/msl/movie_ps.metal.metallib.h"
-#include "gpu/shader/msl/gamma_correction_ps.metal.metallib.h"
-#include "gpu/shader/msl/imgui_ps.metal.metallib.h"
-#include "gpu/shader/msl/imgui_vs.metal.metallib.h"
-#include "gpu/shader/msl/resolve_msaa_color_2x.metal.metallib.h"
-#include "gpu/shader/msl/resolve_msaa_color_4x.metal.metallib.h"
-#include "gpu/shader/msl/resolve_msaa_color_8x.metal.metallib.h"
-#include "gpu/shader/msl/resolve_msaa_depth_2x.metal.metallib.h"
-#include "gpu/shader/msl/resolve_msaa_depth_4x.metal.metallib.h"
-#include "gpu/shader/msl/resolve_msaa_depth_8x.metal.metallib.h"
+#include "shader/msl/blend_color_alpha_ps.metal.metallib.h"
+#include "shader/msl/conditional_survey_ps.metal.metallib.h"
+#include "shader/msl/copy_vs.metal.metallib.h"
+#include "shader/msl/copy_color_ps.metal.metallib.h"
+#include "shader/msl/copy_depth_ps.metal.metallib.h"
+#include "shader/msl/csd_filter_ps.metal.metallib.h"
+#include "shader/msl/csd_no_tex_vs.metal.metallib.h"
+#include "shader/msl/csd_vs.metal.metallib.h"
+#include "shader/msl/enhanced_burnout_blur_vs.metal.metallib.h"
+#include "shader/msl/enhanced_burnout_blur_ps.metal.metallib.h"
+#include "shader/msl/movie_ps.metal.metallib.h"
+#include "shader/msl/gamma_correction_ps.metal.metallib.h"
+#include "shader/msl/gaussian_blur_3x3.metal.metallib.h"
+#include "shader/msl/gaussian_blur_5x5.metal.metallib.h"
+#include "shader/msl/gaussian_blur_7x7.metal.metallib.h"
+#include "shader/msl/gaussian_blur_9x9.metal.metallib.h"
+#include "shader/msl/imgui_ps.metal.metallib.h"
+#include "shader/msl/imgui_vs.metal.metallib.h"
+#include "shader/msl/resolve_msaa_color_2x.metal.metallib.h"
+#include "shader/msl/resolve_msaa_color_4x.metal.metallib.h"
+#include "shader/msl/resolve_msaa_color_8x.metal.metallib.h"
+#include "shader/msl/resolve_msaa_depth_2x.metal.metallib.h"
+#include "shader/msl/resolve_msaa_depth_4x.metal.metallib.h"
+#include "shader/msl/resolve_msaa_depth_8x.metal.metallib.h"
 #endif
 
-#include "gpu/shader/hlsl/conditional_survey_ps.hlsl.spirv.h"
-#include "gpu/shader/hlsl/copy_vs.hlsl.spirv.h"
-#include "gpu/shader/hlsl/copy_color_ps.hlsl.spirv.h"
-#include "gpu/shader/hlsl/copy_depth_ps.hlsl.spirv.h"
-#include "gpu/shader/hlsl/enhanced_burnout_blur_vs.hlsl.spirv.h"
-#include "gpu/shader/hlsl/enhanced_burnout_blur_ps.hlsl.spirv.h"
-#include "gpu/shader/hlsl/movie_ps.hlsl.spirv.h"
-#include "gpu/shader/hlsl/gamma_correction_ps.hlsl.spirv.h"
-#include "gpu/shader/hlsl/imgui_ps.hlsl.spirv.h"
-#include "gpu/shader/hlsl/imgui_vs.hlsl.spirv.h"
-#include "gpu/shader/hlsl/resolve_msaa_color_2x.hlsl.spirv.h"
-#include "gpu/shader/hlsl/resolve_msaa_color_4x.hlsl.spirv.h"
-#include "gpu/shader/hlsl/resolve_msaa_color_8x.hlsl.spirv.h"
-#include "gpu/shader/hlsl/resolve_msaa_depth_2x.hlsl.spirv.h"
-#include "gpu/shader/hlsl/resolve_msaa_depth_4x.hlsl.spirv.h"
-#include "gpu/shader/hlsl/resolve_msaa_depth_8x.hlsl.spirv.h"
+#include "shader/hlsl/blend_color_alpha_ps.hlsl.spirv.h"
+#include "shader/hlsl/conditional_survey_ps.hlsl.spirv.h"
+#include "shader/hlsl/copy_vs.hlsl.spirv.h"
+#include "shader/hlsl/copy_color_ps.hlsl.spirv.h"
+#include "shader/hlsl/copy_depth_ps.hlsl.spirv.h"
+#include "shader/hlsl/csd_filter_ps.hlsl.spirv.h"
+#include "shader/hlsl/csd_no_tex_vs.hlsl.spirv.h"
+#include "shader/hlsl/csd_vs.hlsl.spirv.h"
+#include "shader/hlsl/enhanced_burnout_blur_vs.hlsl.spirv.h"
+#include "shader/hlsl/enhanced_burnout_blur_ps.hlsl.spirv.h"
+#include "shader/hlsl/movie_ps.hlsl.spirv.h"
+#include "shader/hlsl/gamma_correction_ps.hlsl.spirv.h"
+#include "shader/hlsl/gaussian_blur_3x3.hlsl.spirv.h"
+#include "shader/hlsl/gaussian_blur_5x5.hlsl.spirv.h"
+#include "shader/hlsl/gaussian_blur_7x7.hlsl.spirv.h"
+#include "shader/hlsl/gaussian_blur_9x9.hlsl.spirv.h"
+#include "shader/hlsl/imgui_ps.hlsl.spirv.h"
+#include "shader/hlsl/imgui_vs.hlsl.spirv.h"
+#include "shader/hlsl/resolve_msaa_color_2x.hlsl.spirv.h"
+#include "shader/hlsl/resolve_msaa_color_4x.hlsl.spirv.h"
+#include "shader/hlsl/resolve_msaa_color_8x.hlsl.spirv.h"
+#include "shader/hlsl/resolve_msaa_depth_2x.hlsl.spirv.h"
+#include "shader/hlsl/resolve_msaa_depth_4x.hlsl.spirv.h"
+#include "shader/hlsl/resolve_msaa_depth_8x.hlsl.spirv.h"
 
 #ifdef _WIN32
 extern "C"
@@ -118,7 +150,19 @@ namespace plume
 #ifdef MARATHON_RECOMP_METAL
 extern std::unique_ptr<RenderInterface> CreateMetalInterface();
 #endif
+#ifdef PLUME_SDL_VULKAN_ENABLED
+    extern std::unique_ptr<RenderInterface> CreateVulkanInterface(RenderWindow sdlWindow);
+#else
     extern std::unique_ptr<RenderInterface> CreateVulkanInterface();
+#endif
+
+    static std::unique_ptr<RenderInterface> CreateVulkanInterfaceWrapper() {
+#ifdef PLUME_SDL_VULKAN_ENABLED
+        return CreateVulkanInterface(GameWindow::s_renderWindow);
+#else
+        return CreateVulkanInterface();
+#endif
+    }
 }
 
 using namespace plume;
@@ -197,7 +241,7 @@ struct SharedConstants
     uint32_t conditionalRenderingIndex{};
 };
 
-// Depth bias values here are only used when the render device has 
+// Depth bias values here are only used when the render device has
 // dynamic depth bias capability enabled. Otherwise, they get unused
 // and the values get assigned in the pipeline state instead.
 
@@ -301,6 +345,7 @@ struct Profiler
 static double g_applicationValues[PROFILER_VALUE_COUNT];
 static Profiler g_gpuFrameProfiler;
 static Profiler g_presentProfiler;
+static double g_currentFps{};
 static Profiler g_frameFenceProfiler;
 static Profiler g_presentWaitProfiler;
 static Profiler g_swapChainAcquireProfiler;
@@ -437,6 +482,7 @@ static std::atomic<uint32_t> g_pendingPipelineTaskCount;
 enum class PipelineTaskType
 {
     Null,
+    DatabaseData,
     PrecompilePipelines,
     RecompilePipelines
 };
@@ -444,50 +490,27 @@ enum class PipelineTaskType
 struct PipelineTask
 {
     PipelineTaskType type{};
+//    boost::shared_ptr<Hedgehog::Database::CDatabaseData> databaseData;
 };
 
 static Mutex g_pipelineTaskMutex;
 static std::vector<PipelineTask> g_pipelineTaskQueue;
 
-static std::thread::id g_mainThreadId = std::this_thread::get_id();
-
-class LoadingPipelineCompilationEvent : public HookEvent
-{
-public:
-    void Postfix() override
-    {
-        assert(std::this_thread::get_id() == g_mainThreadId);
-
-        // Wait for pipeline compilations to finish.
-        uint32_t value;
-        while ((value = g_compilingPipelineTaskCount.load()) != 0)
-        {
-            // Pump SDL events to prevent the OS
-            // from thinking the process is unresponsive.
-            SDL_PumpEvents();
-            SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
-
-            g_compilingPipelineTaskCount.wait(value);
-        }
-    }
-}
-g_loadingPipelineCompilationEvent{};
-
-static void EnqueuePipelineTask(PipelineTaskType type)
-{
-    // Precompiled pipelines deliberately do not increment
-    // this counter to overlap the compilation with intro logos.
-    if (type != PipelineTaskType::PrecompilePipelines)
-        ++g_compilingPipelineTaskCount;
-
-    {
-        std::lock_guard lock(g_pipelineTaskMutex);
-        g_pipelineTaskQueue.emplace_back(type);
-    }
-
-    if ((++g_pendingPipelineTaskCount) == 1)
-        g_pendingPipelineTaskCount.notify_one();
-}
+//static void EnqueuePipelineTask(PipelineTaskType type, const boost::shared_ptr<Hedgehog::Database::CDatabaseData>& databaseData)
+//{
+//    // Precompiled pipelines deliberately do not increment
+//    // this counter to overlap the compilation with intro logos.
+//    if (type != PipelineTaskType::PrecompilePipelines)
+//        ++g_compilingPipelineTaskCount;
+//
+//    {
+//        std::lock_guard lock(g_pipelineTaskMutex);
+//        g_pipelineTaskQueue.emplace_back(type, databaseData);
+//    }
+//
+//    if ((++g_pendingPipelineTaskCount) == 1)
+//        g_pendingPipelineTaskCount.notify_one();
+//}
 
 static const PipelineState g_pipelineStateCache[] =
 {
@@ -696,7 +719,7 @@ struct PrimitiveIndexData
             }
         }
 
-        if (indexBuffer == NULL || currentIndexCount < indexCount)
+        if (indexBuffer.ref == nullptr || currentIndexCount < indexCount)
         {
             auto allocation = g_uploadAllocators[g_frame].allocate<false>(indexData.data(), indexCount * 2, 2);
             indexBuffer = allocation.buffer->at(allocation.offset);
@@ -855,7 +878,7 @@ static void DestructTempResources()
             {
                 ReleaseSurfaceVariant(surface->variant);
             }
-            else if (surface->descriptorIndex != NULL)
+            else if (surface->descriptorIndex != 0)
             {
                 g_textureDescriptorSet->setTexture(surface->descriptorIndex, nullptr, {});
                 g_textureDescriptorAllocator.free(surface->descriptorIndex);
@@ -928,10 +951,12 @@ static void FlushBarriers()
 {
     if (!g_barrierMap.empty())
     {
+        LOGF_PS5_GPU_DIAG("GPU: FlushBarriers begin frame={} barrier_count={}", g_frame, g_barrierMap.size());
         for (auto& [texture, layout] : g_barrierMap)
             g_barriers.emplace_back(texture, layout);
 
         g_commandLists[g_frame]->barriers(RenderBarrierStage::GRAPHICS | RenderBarrierStage::COPY, g_barriers);
+        LOG_PS5_GPU_DIAG("GPU: FlushBarriers backend call returned");
 
         g_barrierMap.clear();
         g_barriers.clear();
@@ -966,6 +991,15 @@ static void LoadEmbeddedResources()
 
     g_buttonBcDiff = decompressZstd(g_button_bc_diff, g_button_bc_diff_uncompressed_size);
 }
+
+enum class CsdFilterState
+{
+    Unknown,
+    On,
+    Off
+};
+
+static CsdFilterState g_csdFilterState;
 
 enum class RenderCommandType
 {
@@ -1133,6 +1167,7 @@ struct RenderCommand
             uint8_t* vertexStreamZeroData;
             uint32_t vertexStreamZeroSize;
             uint32_t vertexStreamZeroStride;
+            CsdFilterState csdFilterState;
         } drawPrimitiveUP;
 
         struct 
@@ -1561,10 +1596,24 @@ static std::unique_ptr<RenderShader> g_resolveMsaaColorShaders[3];
 static ankerl::unordered_dense::map<RenderFormat, std::array<std::unique_ptr<RenderPipeline>, 3>> g_resolveMsaaColorPipelines;
 static std::unique_ptr<RenderPipeline> g_resolveMsaaDepthPipelines[3];
 
-static std::unique_ptr<RenderShader> g_enhancedBurnoutBlurVSShader;
-static std::unique_ptr<RenderShader> g_enhancedBurnoutBlurPSShader;
+enum
+{
+    GAUSSIAN_BLUR_3X3,
+    GAUSSIAN_BLUR_5X5,
+    GAUSSIAN_BLUR_7X7,
+    GAUSSIAN_BLUR_9X9,
+    GAUSSIAN_BLUR_COUNT
+};
 
-static std::unique_ptr<RenderShader> g_MoviePSShader;
+static std::unique_ptr<GuestShader> g_gaussianBlurShaders[GAUSSIAN_BLUR_COUNT];
+
+static std::unique_ptr<GuestShader> g_csdFilterShader;
+static GuestShader* g_csdShader;
+
+static std::unique_ptr<GuestShader> g_enhancedBurnoutBlurVSShader;
+static std::unique_ptr<GuestShader> g_enhancedBurnoutBlurPSShader;
+
+static std::unique_ptr<GuestShader> g_MoviePSShader;
 
 static std::unique_ptr<GuestShader> g_conditionalSurveyPSShader;
 
@@ -1646,6 +1695,7 @@ extern ImFontBuilderIO g_fontBuilderIO;
 
 static void CreateImGuiBackend()
 {
+    LOG_PS5_GPU_DIAG("GPU: CreateImGuiBackend internal begin");
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;
     io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
@@ -1659,18 +1709,31 @@ static void CreateImGuiBackend()
     ImFontAtlasSnapshot::GenerateGlyphRanges();
 #endif
 
+    LOG_PS5_GPU_DIAG("GPU: InitImGuiUtils begin");
     InitImGuiUtils();
+    LOG_PS5_GPU_DIAG("GPU: InitImGuiUtils end");
+    LOG_PS5_GPU_DIAG("GPU: OptionsMenu::Init begin");
     OptionsMenu::Init();
+    LOG_PS5_GPU_DIAG("GPU: OptionsMenu::Init end");
+    LOG_PS5_GPU_DIAG("GPU: ModsMenu::Init begin");
+    ModsMenu::Init();
+    LOG_PS5_GPU_DIAG("GPU: ModsMenu::Init end");
+    LOG_PS5_GPU_DIAG("GPU: InstallerWizard::Init begin");
     InstallerWizard::Init();
+    LOG_PS5_GPU_DIAG("GPU: InstallerWizard::Init end");
 
-    ImGui_ImplSDL3_InitForOther(GameWindow::s_pWindow);
+    LOG_PS5_GPU_DIAG("GPU: ImGui_ImplSDL2_InitForOther begin");
+    ImGui_ImplSDL2_InitForOther(GameWindow::s_pWindow);
+    LOG_PS5_GPU_DIAG("GPU: ImGui_ImplSDL2_InitForOther end");
 
 #ifdef ENABLE_IM_FONT_ATLAS_SNAPSHOT
     g_imFontTexture = LoadTexture(
         decompressZstd(g_im_font_atlas_texture, g_im_font_atlas_texture_uncompressed_size).get(), g_im_font_atlas_texture_uncompressed_size);
 #else
+    LOG_PS5_GPU_DIAG("GPU: ImGui font atlas build begin");
     io.Fonts->FontBuilderIO = &g_fontBuilderIO;
     io.Fonts->Build();
+    LOG_PS5_GPU_DIAG("GPU: ImGui font atlas build end");
 
     g_imFontTexture = std::make_unique<GuestTexture>(ResourceType::Texture);
 
@@ -1687,13 +1750,19 @@ static void CreateImGuiBackend()
     textureDesc.arraySize = 1;
     textureDesc.format = RenderFormat::R8G8B8A8_UNORM;
 
+    LOGF_PS5_GPU_DIAG("GPU: ImGui font texture creation begin size={}x{}", width, height);
     g_imFontTexture->textureHolder = g_device->createTexture(textureDesc);
     g_imFontTexture->texture = g_imFontTexture->textureHolder.get();
+    LOGF_PS5_GPU_DIAG("GPU: ImGui font texture creation end ptr=0x{:x}", reinterpret_cast<uintptr_t>(g_imFontTexture->texture));
 
     uint32_t rowPitch = (width * 4 + PITCH_ALIGNMENT - 1) & ~(PITCH_ALIGNMENT - 1);
     uint32_t slicePitch = (rowPitch * height + PLACEMENT_ALIGNMENT - 1) & ~(PLACEMENT_ALIGNMENT - 1);
+    LOGF_PS5_GPU_DIAG("GPU: ImGui font upload buffer creation begin row_pitch={} slice_pitch={}", rowPitch, slicePitch);
     auto uploadBuffer = g_device->createBuffer(RenderBufferDesc::UploadBuffer(slicePitch));
+    LOGF_PS5_GPU_DIAG("GPU: ImGui font upload buffer creation end ptr=0x{:x}", reinterpret_cast<uintptr_t>(uploadBuffer.get()));
+    LOG_PS5_GPU_DIAG("GPU: ImGui font upload buffer map begin");
     uint8_t* mappedMemory = reinterpret_cast<uint8_t*>(uploadBuffer->map());
+    LOGF_PS5_GPU_DIAG("GPU: ImGui font upload buffer map end ptr=0x{:x}", reinterpret_cast<uintptr_t>(mappedMemory));
 
     if (rowPitch == (width * 4))
     {
@@ -1711,6 +1780,7 @@ static void CreateImGuiBackend()
 
     uploadBuffer->unmap();
 
+    LOG_PS5_GPU_DIAG("GPU: ImGui font texture upload command begin");
     ExecuteCopyCommandList([&]
         {
             g_copyCommandList->barriers(RenderBarrierStage::COPY, RenderTextureBarrier(g_imFontTexture->texture, RenderTextureLayout::COPY_DEST));
@@ -1719,6 +1789,7 @@ static void CreateImGuiBackend()
                 RenderTextureCopyLocation::Subresource(g_imFontTexture->texture, 0),
                 RenderTextureCopyLocation::PlacedFootprint(uploadBuffer.get(), RenderFormat::R8G8B8A8_UNORM, width, height, 1, rowPitch / 4, 0));
         });
+    LOG_PS5_GPU_DIAG("GPU: ImGui font texture upload command end");
 
     g_imFontTexture->layout = RenderTextureLayout::COPY_DEST;
 
@@ -1726,7 +1797,9 @@ static void CreateImGuiBackend()
     textureViewDesc.format = textureDesc.format;
     textureViewDesc.dimension = RenderTextureViewDimension::TEXTURE_2D;
     textureViewDesc.mipLevels = 1;
+    LOG_PS5_GPU_DIAG("GPU: ImGui font texture view creation begin");
     g_imFontTexture->textureView = g_imFontTexture->texture->createTextureView(textureViewDesc);
+    LOGF_PS5_GPU_DIAG("GPU: ImGui font texture view creation end ptr=0x{:x}", reinterpret_cast<uintptr_t>(g_imFontTexture->textureView.get()));
 
     g_imFontTexture->descriptorIndex = g_textureDescriptorAllocator.allocate();
     g_textureDescriptorSet->setTexture(g_imFontTexture->descriptorIndex, g_imFontTexture->texture, RenderTextureLayout::SHADER_READ, g_imFontTexture->textureView.get());
@@ -1751,10 +1824,16 @@ static void CreateImGuiBackend()
     pipelineLayoutBuilder.addPushConstant(0, 2, sizeof(ImGuiPushConstants), RenderShaderStageFlag::VERTEX | RenderShaderStageFlag::PIXEL);
 
     pipelineLayoutBuilder.end();
+    LOG_PS5_GPU_DIAG("GPU: ImGui pipeline layout creation begin");
     g_imPipelineLayout = pipelineLayoutBuilder.create(g_device.get());
+    LOGF_PS5_GPU_DIAG("GPU: ImGui pipeline layout creation end ptr=0x{:x}", reinterpret_cast<uintptr_t>(g_imPipelineLayout.get()));
 
+    LOG_PS5_GPU_DIAG("GPU: ImGui vertex shader creation begin");
     auto vertexShader = CREATE_SHADER(imgui_vs);
+    LOGF_PS5_GPU_DIAG("GPU: ImGui vertex shader creation end ptr=0x{:x}", reinterpret_cast<uintptr_t>(vertexShader.get()));
+    LOG_PS5_GPU_DIAG("GPU: ImGui pixel shader creation begin");
     auto pixelShader = CREATE_SHADER(imgui_ps);
+    LOGF_PS5_GPU_DIAG("GPU: ImGui pixel shader creation end ptr=0x{:x}", reinterpret_cast<uintptr_t>(pixelShader.get()));
 
     RenderInputElement inputElements[3];
     inputElements[0] = RenderInputElement("POSITION", 0, 0, RenderFormat::R32G32_FLOAT, 0, offsetof(ImDrawVert, pos));
@@ -1774,10 +1853,14 @@ static void CreateImGuiBackend()
     pipelineDesc.inputElementsCount = std::size(inputElements);
     pipelineDesc.inputSlots = &inputSlot;
     pipelineDesc.inputSlotsCount = 1;
+    LOG_PS5_GPU_DIAG("GPU: ImGui alpha-blend graphics pipeline creation begin");
     g_imPipeline = g_device->createGraphicsPipeline(pipelineDesc);
+    LOGF_PS5_GPU_DIAG("GPU: ImGui alpha-blend graphics pipeline creation end ptr=0x{:x}", reinterpret_cast<uintptr_t>(g_imPipeline.get()));
 
     pipelineDesc.renderTargetBlend[0].dstBlend = RenderBlend::ONE;
+    LOG_PS5_GPU_DIAG("GPU: ImGui additive graphics pipeline creation begin");
     g_imAdditivePipeline = g_device->createGraphicsPipeline(pipelineDesc);
+    LOGF_PS5_GPU_DIAG("GPU: ImGui additive graphics pipeline creation end ptr=0x{:x}", reinterpret_cast<uintptr_t>(g_imAdditivePipeline.get()));
 
 #ifndef ENABLE_IM_FONT_ATLAS_SNAPSHOT
     ImFontAtlasSnapshot snapshot;
@@ -1804,6 +1887,7 @@ static void CreateImGuiBackend()
         fclose(file);
     }
 #endif
+    LOG_PS5_GPU_DIAG("GPU: CreateImGuiBackend internal complete");
 }
 
 static void CheckSwapChain()
@@ -1854,7 +1938,7 @@ static void BeginCommandList()
         if (g_intermediaryBackBufferTextureWidth != width ||
             g_intermediaryBackBufferTextureHeight != height)
         {
-            if (g_intermediaryBackBufferTextureDescriptorIndex == NULL)
+            if (g_intermediaryBackBufferTextureDescriptorIndex == 0)
                 g_intermediaryBackBufferTextureDescriptorIndex = g_textureDescriptorAllocator.allocate();
 
             Video::WaitForGPU(); // Fine to wait for GPU, this'll only happen during resize.
@@ -1942,6 +2026,7 @@ using RenderInterfaceFunction = std::unique_ptr<RenderInterface>(void);
 
 static bool TryCreateHostDevice(std::vector<RenderInterfaceFunction*>& interfaceFunctions, bool graphicsApiRetry)
 {
+    LOGF_PS5_GPU_DIAG("GPU: TryCreateHostDevice begin backend_candidates={} graphicsApiRetry={}", interfaceFunctions.size(), graphicsApiRetry);
 #ifdef MARATHON_RECOMP_D3D12
     bool allowVulkanRedirection = true;
 
@@ -1959,6 +2044,7 @@ static bool TryCreateHostDevice(std::vector<RenderInterfaceFunction*>& interface
     for (size_t i = 0; i < interfaceFunctions.size(); i++)
     {
         RenderInterfaceFunction* interfaceFunction = interfaceFunctions[i];
+        LOGF_PS5_GPU_DIAG("GPU: backend candidate {} interface creation begin", i);
 
 #ifdef MARATHON_RECOMP_D3D12
         // Wrap the device creation in __try/__except to survive from driver crashes.
@@ -1966,15 +2052,24 @@ static bool TryCreateHostDevice(std::vector<RenderInterfaceFunction*>& interface
 #endif
         {
             g_interface = interfaceFunction();
+            LOGF_PS5_GPU_DIAG("GPU: backend candidate {} interface creation returned ptr=0x{:x}", i, reinterpret_cast<uintptr_t>(g_interface.get()));
             if (g_interface == nullptr)
             {
+                LOGF_PS5_GPU_DIAG("GPU: backend candidate {} returned a null interface", i);
                 continue;
             }
 
+            LOGF_PS5_GPU_DIAG("GPU: backend candidate {} createDevice begin requested_device={}",
+                          i, Config::GraphicsDevice.Value);
             g_device = g_interface->createDevice(Config::GraphicsDevice);
+            LOGF_PS5_GPU_DIAG("GPU: backend candidate {} createDevice returned ptr=0x{:x}", i, reinterpret_cast<uintptr_t>(g_device.get()));
             if (g_device != nullptr)
             {
                 const RenderDeviceDescription &deviceDescription = g_device->getDescription();
+                LOGF_PS5_GPU_DIAG("GPU: device selected name={} vendor={} type={} driver=0x{:x} dedicated_memory={}",
+                              deviceDescription.name, static_cast<int>(deviceDescription.vendor),
+                              static_cast<int>(deviceDescription.type), deviceDescription.driverVersion,
+                              deviceDescription.dedicatedVideoMemory);
                 
 #if defined(MARATHON_RECOMP_D3D12)
                 if (interfaceFunction == CreateD3D12Interface)
@@ -2005,9 +2100,9 @@ static bool TryCreateHostDevice(std::vector<RenderInterfaceFunction*>& interface
                     }
                 }
 
-                g_backend = (interfaceFunction == CreateVulkanInterface) ? Backend::VULKAN : Backend::D3D12;
+                g_backend = (interfaceFunction == CreateVulkanInterfaceWrapper) ? Backend::VULKAN : Backend::D3D12;
 #elif defined(MARATHON_RECOMP_METAL)
-                g_backend = (interfaceFunction == CreateVulkanInterface) ? Backend::VULKAN : Backend::METAL;
+                g_backend = (interfaceFunction == CreateVulkanInterfaceWrapper) ? Backend::VULKAN : Backend::METAL;
 #endif
                 // Enable triangle strip workaround if we are on AMD, as there is a bug where
                 // restart indices cause triangles to be culled incorrectly. Converting them to degenerate triangles fixes it.
@@ -2034,19 +2129,27 @@ static bool TryCreateHostDevice(std::vector<RenderInterfaceFunction*>& interface
 #endif
     }
 
+    LOGF_PS5_GPU_DIAG("GPU: TryCreateHostDevice end interface=0x{:x} device=0x{:x}",
+                  reinterpret_cast<uintptr_t>(g_interface.get()), reinterpret_cast<uintptr_t>(g_device.get()));
     return true;
 }
 
 bool Video::CreateHostDevice(const char* sdlVideoDriver, bool graphicsApiRetry)
 {
+    LOGF_PS5_GPU_DIAG("GPU: Video::CreateHostDevice begin sdlVideoDriver={} graphicsApiRetry={}",
+                  sdlVideoDriver != nullptr ? sdlVideoDriver : "<default>", graphicsApiRetry);
     for (uint32_t i = 0; i < 16; i++)
         g_inputSlots[i].index = i;
 
+    LOG_PS5_GPU_DIAG("GPU: ImGui version check and context creation begin");
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImPlot::CreateContext();
+    LOG_PS5_GPU_DIAG("GPU: ImGui and ImPlot contexts created");
 
+    LOG_PS5_GPU_DIAG("GPU: GameWindow::Init begin");
     GameWindow::Init(sdlVideoDriver);
+    LOG_PS5_GPU_DIAG("GPU: GameWindow::Init end");
 
 #if defined(MARATHON_RECOMP_D3D12)
     g_backend = (DetectWine() || Config::GraphicsAPI == EGraphicsAPI::Vulkan) ? Backend::VULKAN : Backend::D3D12;
@@ -2058,24 +2161,28 @@ bool Video::CreateHostDevice(const char* sdlVideoDriver, bool graphicsApiRetry)
     std::vector<RenderInterfaceFunction*> interfaceFunctions;
 
 #ifdef MARATHON_RECOMP_D3D12
-    interfaceFunctions.push_back((g_backend == Backend::VULKAN) ? CreateVulkanInterface : CreateD3D12Interface);
-    interfaceFunctions.push_back((g_backend == Backend::VULKAN) ? CreateD3D12Interface : CreateVulkanInterface);
+    interfaceFunctions.push_back((g_backend == Backend::VULKAN) ? CreateVulkanInterfaceWrapper : CreateD3D12Interface);
+    interfaceFunctions.push_back((g_backend == Backend::VULKAN) ? CreateD3D12Interface : CreateVulkanInterfaceWrapper);
 #elif defined(MARATHON_RECOMP_METAL)
-    interfaceFunctions.push_back((g_backend == Backend::VULKAN) ? CreateVulkanInterface : CreateMetalInterface);
-    interfaceFunctions.push_back((g_backend == Backend::VULKAN) ? CreateMetalInterface : CreateVulkanInterface);
+    interfaceFunctions.push_back((g_backend == Backend::VULKAN) ? CreateVulkanInterfaceWrapper : CreateMetalInterface);
+    interfaceFunctions.push_back((g_backend == Backend::VULKAN) ? CreateMetalInterface : CreateVulkanInterfaceWrapper);
 #else
-    interfaceFunctions.push_back(CreateVulkanInterface);
+    interfaceFunctions.push_back(CreateVulkanInterfaceWrapper);
 #endif
 
+    LOGF_PS5_GPU_DIAG("GPU: backend probing begin count={}", interfaceFunctions.size());
     if (!TryCreateHostDevice(interfaceFunctions, graphicsApiRetry))
     {
+        LOG_PS5_GPU_DIAG("GPU: TryCreateHostDevice returned false");
         return false;
     }
 
     if (g_device == nullptr)
     {
+        LOG_PS5_GPU_DIAG("GPU: no render device was created");
         return false;
     }
+    LOGF_PS5_GPU_DIAG("GPU: render device ready ptr=0x{:x}", reinterpret_cast<uintptr_t>(g_device.get()));
 
 #ifdef MARATHON_RECOMP_D3D12
     if (graphicsApiRetry)
@@ -2085,15 +2192,30 @@ bool Video::CreateHostDevice(const char* sdlVideoDriver, bool graphicsApiRetry)
     }
 #endif
 
+    LOG_PS5_GPU_DIAG("GPU: getCapabilities begin");
     g_capabilities = g_device->getCapabilities();
+    LOGF_PS5_GPU_DIAG("GPU: getCapabilities end resolveRegion={} resolveModes={} sampleLocations={} descriptorIndexing={} presentWait={} maxTextureSize={} uma={}",
+                  g_capabilities.resolveRegion, g_capabilities.resolveModes, g_capabilities.sampleLocations,
+                  g_capabilities.descriptorIndexing, g_capabilities.presentWait, g_capabilities.maxTextureSize,
+                  g_capabilities.uma);
 
+    LOG_PS5_GPU_DIAG("GPU: LoadEmbeddedResources begin");
     LoadEmbeddedResources();
+    LOG_PS5_GPU_DIAG("GPU: LoadEmbeddedResources end");
 
     constexpr uint64_t LowEndMemoryLimit = 2048ULL * 1024ULL * 1024ULL;
-    RenderDeviceDescription deviceDescription = g_device->getDescription();
-    bool lowEndType = deviceDescription.type != RenderDeviceType::UNKNOWN && deviceDescription.type != RenderDeviceType::DISCRETE;
-    bool lowEndMemory = deviceDescription.dedicatedVideoMemory < LowEndMemoryLimit;
-    bool lowEndUMA = deviceDescription.type == RenderDeviceType::UNKNOWN && g_capabilities.uma;
+    const RenderDeviceDescription deviceDescription = g_device->getDescription();
+#if defined(__PROSPERO__)
+    // PS5's fixed GPU reports as INTEGRATED because it shares system memory;
+    // don't apply PC integrated-GPU defaults when the console exposes ample VRAM.
+    const bool lowEndType = false;
+    const bool lowEndMemory = deviceDescription.dedicatedVideoMemory < LowEndMemoryLimit;
+    const bool lowEndUMA = false;
+#else
+    const bool lowEndType = deviceDescription.type != RenderDeviceType::UNKNOWN && deviceDescription.type != RenderDeviceType::DISCRETE;
+    const bool lowEndMemory = deviceDescription.dedicatedVideoMemory < LowEndMemoryLimit;
+    const bool lowEndUMA = deviceDescription.type == RenderDeviceType::UNKNOWN && g_capabilities.uma;
+#endif
     if (lowEndType || lowEndMemory || lowEndUMA)
     {
         // Switch to low end defaults if a non-discrete GPU was detected or a low amount of VRAM was detected.
@@ -2101,9 +2223,13 @@ bool Video::CreateHostDevice(const char* sdlVideoDriver, bool graphicsApiRetry)
         ApplyLowEndDefaults();
     }
 
+    LOG_PS5_GPU_DIAG("GPU: sample-count query begin color=R16G16B16A16_FLOAT depth=D32_FLOAT");
     const RenderSampleCounts colourSampleCount = g_device->getSampleCountsSupported(RenderFormat::R16G16B16A16_FLOAT);
+    LOGF_PS5_GPU_DIAG("GPU: color sample counts=0x{:x}", static_cast<uint32_t>(colourSampleCount));
     const RenderSampleCounts depthSampleCount  = g_device->getSampleCountsSupported(RenderFormat::D32_FLOAT);
+    LOGF_PS5_GPU_DIAG("GPU: depth sample counts=0x{:x}", static_cast<uint32_t>(depthSampleCount));
     const RenderSampleCounts commonSampleCount = colourSampleCount & depthSampleCount;
+    LOGF_PS5_GPU_DIAG("GPU: common sample counts=0x{:x}", static_cast<uint32_t>(commonSampleCount));
 
     // Disable specific MSAA levels if they are not supported.
     if ((commonSampleCount & RenderSampleCount::COUNT_2) == 0)
@@ -2116,20 +2242,36 @@ bool Video::CreateHostDevice(const char* sdlVideoDriver, bool graphicsApiRetry)
     // Set Anti-Aliasing to nearest supported level.
     Config::AntiAliasing.SnapToNearestAccessibleValue(false);
 
+    LOG_PS5_GPU_DIAG("GPU: direct command queue creation begin");
     g_queue = g_device->createCommandQueue(RenderCommandListType::DIRECT);
+    LOGF_PS5_GPU_DIAG("GPU: direct command queue creation end ptr=0x{:x}", reinterpret_cast<uintptr_t>(g_queue.get()));
 
-    for (auto& commandList : g_commandLists)
-        commandList = g_queue->createCommandList();
+    for (size_t i = 0; i < NUM_FRAMES; i++)
+    {
+        LOGF_PS5_GPU_DIAG("GPU: command list {} creation begin", i);
+        g_commandLists[i] = g_queue->createCommandList();
+        LOGF_PS5_GPU_DIAG("GPU: command list {} creation end ptr=0x{:x}", i, reinterpret_cast<uintptr_t>(g_commandLists[i].get()));
+    }
 
-    for (auto& commandFence : g_commandFences)
-        commandFence = g_device->createCommandFence();
+    for (size_t i = 0; i < NUM_FRAMES; i++)
+    {
+        g_commandFences[i] = g_device->createCommandFence();
+        LOGF_PS5_GPU_DIAG("GPU: command fence {} created ptr=0x{:x}", i, reinterpret_cast<uintptr_t>(g_commandFences[i].get()));
+    }
 
-    for (auto& queryPool : g_queryPools)
-        queryPool = g_device->createQueryPool(NUM_QUERIES);
+    for (size_t i = 0; i < NUM_FRAMES; i++)
+    {
+        g_queryPools[i] = g_device->createQueryPool(NUM_QUERIES);
+        LOGF_PS5_GPU_DIAG("GPU: query pool {} created ptr=0x{:x}", i, reinterpret_cast<uintptr_t>(g_queryPools[i].get()));
+    }
 
+    LOG_PS5_GPU_DIAG("GPU: copy command queue creation begin");
     g_copyQueue = g_device->createCommandQueue(RenderCommandListType::COPY);
     g_copyCommandList = g_copyQueue->createCommandList();
     g_copyCommandFence = g_device->createCommandFence();
+    LOGF_PS5_GPU_DIAG("GPU: copy command queue created queue=0x{:x} list=0x{:x} fence=0x{:x}",
+                  reinterpret_cast<uintptr_t>(g_copyQueue.get()), reinterpret_cast<uintptr_t>(g_copyCommandList.get()),
+                  reinterpret_cast<uintptr_t>(g_copyCommandFence.get()));
 
     if (g_backend == Backend::D3D12)
     {
@@ -2172,9 +2314,13 @@ bool Video::CreateHostDevice(const char* sdlVideoDriver, bool graphicsApiRetry)
     swapChainDesc.maxFrameLatency = Config::MaxFrameLatency;
     swapChainDesc.enablePresentWait = g_capabilities.presentWait;
 
+    LOGF_PS5_GPU_DIAG("GPU: createSwapChain begin textures={} maxFrameLatency={} presentWait={}",
+                  bufferCount, static_cast<int>(Config::MaxFrameLatency.Value), g_capabilities.presentWait);
     g_swapChain = g_queue->createSwapChain(swapChainDesc);
+    LOGF_PS5_GPU_DIAG("GPU: createSwapChain returned ptr=0x{:x}", reinterpret_cast<uintptr_t>(g_swapChain.get()));
     g_swapChain->setVsyncEnabled(Config::VSync);
     g_swapChainValid = !g_swapChain->needsResize();
+    LOGF_PS5_GPU_DIAG("GPU: swapchain initialized valid={} texture_count={}", g_swapChainValid, g_swapChain->getTextureCount());
 
     for (auto& acquireSemaphore : g_acquireSemaphores)
         acquireSemaphore = g_device->createCommandSemaphore();
@@ -2192,7 +2338,9 @@ bool Video::CreateHostDevice(const char* sdlVideoDriver, bool graphicsApiRetry)
     descriptorSetBuilder.addTexture(0, TEXTURE_DESCRIPTOR_SIZE);
     descriptorSetBuilder.end(true, TEXTURE_DESCRIPTOR_SIZE);
     
+    LOG_PS5_GPU_DIAG("GPU: texture descriptor set creation begin");
     g_textureDescriptorSet = descriptorSetBuilder.create(g_device.get());
+    LOGF_PS5_GPU_DIAG("GPU: texture descriptor set creation end ptr=0x{:x}", reinterpret_cast<uintptr_t>(g_textureDescriptorSet.get()));
     
     for (size_t i = 0; i < TEXTURE_DESCRIPTOR_NULL_COUNT; i++)
     {
@@ -2251,10 +2399,13 @@ bool Video::CreateHostDevice(const char* sdlVideoDriver, bool graphicsApiRetry)
     descriptorSetBuilder.addSampler(0, SAMPLER_DESCRIPTOR_SIZE);
     descriptorSetBuilder.end(true, SAMPLER_DESCRIPTOR_SIZE);
     
+    LOG_PS5_GPU_DIAG("GPU: sampler descriptor set creation begin");
     g_samplerDescriptorSet = descriptorSetBuilder.create(g_device.get());
+    LOGF_PS5_GPU_DIAG("GPU: sampler descriptor set creation end ptr=0x{:x}", reinterpret_cast<uintptr_t>(g_samplerDescriptorSet.get()));
     auto& [descriptorIndex, sampler] = g_samplerStates[XXH3_64bits(&g_samplerDescs[0], sizeof(RenderSamplerDesc))];
     descriptorIndex = 1;
     sampler = g_device->createSampler(g_samplerDescs[0]);
+    LOGF_PS5_GPU_DIAG("GPU: default sampler created ptr=0x{:x}", reinterpret_cast<uintptr_t>(sampler.get()));
     g_samplerDescriptorSet->setSampler(0, sampler.get());
 
     pipelineLayoutBuilder.addDescriptorSet(descriptorSetBuilder);
@@ -2263,7 +2414,9 @@ bool Video::CreateHostDevice(const char* sdlVideoDriver, bool graphicsApiRetry)
     conditionalSurveyBufferDesc.size = CONDITIONAL_SURVEY_MAX * sizeof(uint32_t);
     conditionalSurveyBufferDesc.heapType = RenderHeapType::DEFAULT;
     conditionalSurveyBufferDesc.flags = RenderBufferFlag::STORAGE | RenderBufferFlag::UNORDERED_ACCESS;
+    LOG_PS5_GPU_DIAG("GPU: conditional survey buffer creation begin");
     g_conditionalSurveyBuffer = g_device->createBuffer(conditionalSurveyBufferDesc);
+    LOGF_PS5_GPU_DIAG("GPU: conditional survey buffer created ptr=0x{:x}", reinterpret_cast<uintptr_t>(g_conditionalSurveyBuffer.get()));
 
     RenderDescriptorSetBuilder conditionalSurveyDescriptorSetBuilder;
     conditionalSurveyDescriptorSetBuilder.begin();
@@ -2289,11 +2442,17 @@ bool Video::CreateHostDevice(const char* sdlVideoDriver, bool graphicsApiRetry)
     }
     pipelineLayoutBuilder.end();
     
+    LOG_PS5_GPU_DIAG("GPU: main pipeline layout creation begin");
     g_pipelineLayout = pipelineLayoutBuilder.create(g_device.get());
+    LOGF_PS5_GPU_DIAG("GPU: main pipeline layout creation end ptr=0x{:x}", reinterpret_cast<uintptr_t>(g_pipelineLayout.get()));
 
+    LOG_PS5_GPU_DIAG("GPU: embedded copy shader creation begin");
     g_copyShader = CREATE_SHADER(copy_vs);
     g_copyColorShader = CREATE_SHADER(copy_color_ps);
     auto copyDepthShader = CREATE_SHADER(copy_depth_ps);
+    LOGF_PS5_GPU_DIAG("GPU: embedded copy shaders created vs=0x{:x} color=0x{:x} depth=0x{:x}",
+                  reinterpret_cast<uintptr_t>(g_copyShader.get()), reinterpret_cast<uintptr_t>(g_copyColorShader.get()),
+                  reinterpret_cast<uintptr_t>(copyDepthShader.get()));
 
     RenderGraphicsPipelineDesc desc;
     desc.pipelineLayout = g_pipelineLayout.get();
@@ -2303,14 +2462,23 @@ bool Video::CreateHostDevice(const char* sdlVideoDriver, bool graphicsApiRetry)
     desc.depthEnabled = true;
     desc.depthWriteEnabled = true;
     desc.depthTargetFormat = RenderFormat::D32_FLOAT_S8_UINT;
+    LOG_PS5_GPU_DIAG("GPU: copy-depth graphics pipeline creation begin");
     g_copyDepthPipeline = g_device->createGraphicsPipeline(desc);
+    LOGF_PS5_GPU_DIAG("GPU: copy-depth graphics pipeline creation end ptr=0x{:x}", reinterpret_cast<uintptr_t>(g_copyDepthPipeline.get()));
 
+    LOG_PS5_GPU_DIAG("GPU: MSAA color resolve 2x shader creation begin");
     g_resolveMsaaColorShaders[0] = CREATE_SHADER(resolve_msaa_color_2x);
+    LOGF_PS5_GPU_DIAG("GPU: MSAA color resolve 2x shader created ptr=0x{:x}", reinterpret_cast<uintptr_t>(g_resolveMsaaColorShaders[0].get()));
+    LOG_PS5_GPU_DIAG("GPU: MSAA color resolve 4x shader creation begin");
     g_resolveMsaaColorShaders[1] = CREATE_SHADER(resolve_msaa_color_4x);
+    LOGF_PS5_GPU_DIAG("GPU: MSAA color resolve 4x shader created ptr=0x{:x}", reinterpret_cast<uintptr_t>(g_resolveMsaaColorShaders[1].get()));
+    LOG_PS5_GPU_DIAG("GPU: MSAA color resolve 8x shader creation begin");
     g_resolveMsaaColorShaders[2] = CREATE_SHADER(resolve_msaa_color_8x);
+    LOGF_PS5_GPU_DIAG("GPU: MSAA color resolve 8x shader created ptr=0x{:x}", reinterpret_cast<uintptr_t>(g_resolveMsaaColorShaders[2].get()));
 
     for (size_t i = 0; i < std::size(g_resolveMsaaDepthPipelines); i++)
     {
+        LOGF_PS5_GPU_DIAG("GPU: MSAA depth resolve pipeline index={} shader creation begin", i);
         std::unique_ptr<RenderShader> pixelShader;
         switch (i)
         {
@@ -2324,6 +2492,8 @@ bool Video::CreateHostDevice(const char* sdlVideoDriver, bool graphicsApiRetry)
             pixelShader = CREATE_SHADER(resolve_msaa_depth_8x);
             break;
         }
+        LOGF_PS5_GPU_DIAG("GPU: MSAA depth resolve pipeline index={} pixel shader created ptr=0x{:x}",
+                      i, reinterpret_cast<uintptr_t>(pixelShader.get()));
 
         desc = {};
         desc.pipelineLayout = g_pipelineLayout.get();
@@ -2333,19 +2503,44 @@ bool Video::CreateHostDevice(const char* sdlVideoDriver, bool graphicsApiRetry)
         desc.depthEnabled = true;
         desc.depthWriteEnabled = true;
         desc.depthTargetFormat = RenderFormat::D32_FLOAT_S8_UINT;
+        LOGF_PS5_GPU_DIAG("GPU: MSAA depth resolve graphics pipeline index={} creation begin", i);
         g_resolveMsaaDepthPipelines[i] = g_device->createGraphicsPipeline(desc);
+        LOGF_PS5_GPU_DIAG("GPU: MSAA depth resolve graphics pipeline index={} creation end ptr=0x{:x}",
+                      i, reinterpret_cast<uintptr_t>(g_resolveMsaaDepthPipelines[i].get()));
     }
 
-    g_enhancedBurnoutBlurVSShader = CREATE_SHADER(enhanced_burnout_blur_vs);
-    g_enhancedBurnoutBlurPSShader = CREATE_SHADER(enhanced_burnout_blur_ps);
-    g_MoviePSShader = CREATE_SHADER(movie_ps);
+    LOG_PS5_GPU_DIAG("GPU: all embedded MSAA resolve graphics pipelines created");
+
+    for (auto& shader : g_gaussianBlurShaders)
+        shader = std::make_unique<GuestShader>(ResourceType::PixelShader);
+
+    g_gaussianBlurShaders[GAUSSIAN_BLUR_3X3]->shader = CREATE_SHADER(gaussian_blur_3x3);
+    g_gaussianBlurShaders[GAUSSIAN_BLUR_5X5]->shader = CREATE_SHADER(gaussian_blur_5x5);
+    g_gaussianBlurShaders[GAUSSIAN_BLUR_7X7]->shader = CREATE_SHADER(gaussian_blur_7x7);
+    g_gaussianBlurShaders[GAUSSIAN_BLUR_9X9]->shader = CREATE_SHADER(gaussian_blur_9x9);
+
+    g_csdFilterShader = std::make_unique<GuestShader>(ResourceType::PixelShader);
+    g_csdFilterShader->shader = CREATE_SHADER(csd_filter_ps);
+
+    g_enhancedBurnoutBlurVSShader = std::make_unique<GuestShader>(ResourceType::VertexShader);
+    g_enhancedBurnoutBlurVSShader->shader = CREATE_SHADER(enhanced_burnout_blur_vs);
+
+    g_enhancedBurnoutBlurPSShader = std::make_unique<GuestShader>(ResourceType::PixelShader);
+    g_enhancedBurnoutBlurPSShader->shader = CREATE_SHADER(enhanced_burnout_blur_ps);
+
+    g_MoviePSShader = std::make_unique<GuestShader>(ResourceType::PixelShader);
+    g_MoviePSShader->shader = CREATE_SHADER(movie_ps);
 
     g_conditionalSurveyPSShader = std::make_unique<GuestShader>(ResourceType::PixelShader);
     g_conditionalSurveyPSShader->shader = CREATE_SHADER(conditional_survey_ps);
 
+    LOG_PS5_GPU_DIAG("GPU: CreateImGuiBackend begin");
     CreateImGuiBackend();
+    LOG_PS5_GPU_DIAG("GPU: CreateImGuiBackend end");
 
+    LOG_PS5_GPU_DIAG("GPU: gamma-correction shader creation begin");
     auto gammaCorrectionShader = CREATE_SHADER(gamma_correction_ps);
+    LOGF_PS5_GPU_DIAG("GPU: gamma-correction shader creation end ptr=0x{:x}", reinterpret_cast<uintptr_t>(gammaCorrectionShader.get()));
 
     desc = {};
     desc.pipelineLayout = g_pipelineLayout.get();
@@ -2354,7 +2549,9 @@ bool Video::CreateHostDevice(const char* sdlVideoDriver, bool graphicsApiRetry)
     desc.renderTargetFormat[0] = BACKBUFFER_FORMAT;
     desc.renderTargetBlend[0] = RenderBlendDesc::Copy();
     desc.renderTargetCount = 1;
+    LOG_PS5_GPU_DIAG("GPU: gamma-correction graphics pipeline creation begin");
     g_gammaCorrectionPipeline = g_device->createGraphicsPipeline(desc);
+    LOGF_PS5_GPU_DIAG("GPU: gamma-correction graphics pipeline creation end ptr=0x{:x}", reinterpret_cast<uintptr_t>(g_gammaCorrectionPipeline.get()));
 
     // NOTE: We initially allocate this on host memory to make the installer work, even if the 4 GB memory allocation fails.
     g_backBufferHolder = std::make_unique<GuestSurface>(ResourceType::RenderTarget);
@@ -2365,9 +2562,15 @@ bool Video::CreateHostDevice(const char* sdlVideoDriver, bool graphicsApiRetry)
     g_backBuffer->format = BACKBUFFER_FORMAT;
     g_backBuffer->textureHolder = g_device->createTexture(RenderTextureDesc::Texture2D(1, 1, 1, BACKBUFFER_FORMAT, RenderTextureFlag::RENDER_TARGET));
 
+    LOG_PS5_GPU_DIAG("GPU: initial viewport computation begin");
     Video::ComputeViewportDimensions();
+    LOGF_PS5_GPU_DIAG("GPU: initial viewport computed {}x{}", Video::s_viewportWidth, Video::s_viewportHeight);
+    LOG_PS5_GPU_DIAG("GPU: initial CheckSwapChain begin");
     CheckSwapChain();
+    LOGF_PS5_GPU_DIAG("GPU: initial CheckSwapChain end valid={} index={}", g_swapChainValid, g_backBufferIndex);
+    LOG_PS5_GPU_DIAG("GPU: initial BeginCommandList begin");
     BeginCommandList();
+    LOG_PS5_GPU_DIAG("GPU: initial BeginCommandList end");
 
     RenderTextureBarrier blankTextureBarriers[TEXTURE_DESCRIPTOR_NULL_COUNT];
     for (size_t i = 0; i < TEXTURE_DESCRIPTOR_NULL_COUNT; i++)
@@ -2375,6 +2578,7 @@ bool Video::CreateHostDevice(const char* sdlVideoDriver, bool graphicsApiRetry)
 
     g_commandLists[g_frame]->barriers(RenderBarrierStage::NONE, blankTextureBarriers, std::size(blankTextureBarriers));
 
+    LOG_PS5_GPU_DIAG("GPU: Video::CreateHostDevice complete");
     return true;
 }
 
@@ -2701,7 +2905,7 @@ static const char *DeviceTypeName(RenderDeviceType type)
 
 static void DrawProfiler()
 {
-    const auto toggleProfiler = SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_F1] != 0;
+    bool toggleProfiler = SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_F1] != 0;
 
     if (!g_profilerWasToggled && toggleProfiler)
     {
@@ -2716,30 +2920,26 @@ static void DrawProfiler()
         return;
 
     ImFont* font = ImFontAtlasSnapshot::GetFont("FOT-RodinPro-DB.otf");
-    const auto defaultFontScale = font->Scale;
+    float defaultScale = font->Scale;
     font->Scale = ImGui::GetDefaultFont()->FontSize / font->FontSize;
     ImGui::PushFont(font);
 
 #define IMGUI_GENERIC_ROW(name, value, ...) \
-    do                                      \
-    {                                       \
-        ImGui::TableNextColumn();           \
-        ImGui::Text(name);                  \
-        ImGui::TableNextColumn();           \
-        ImGui::Text(value, __VA_ARGS__);    \
-    }                                       \
-    while (false);
+    ImGui::TableNextColumn(); \
+    ImGui::Text(name); \
+    ImGui::TableNextColumn(); \
+    ImGui::Text(value, __VA_ARGS__);
 
     if (ImGui::Begin("Profiler", &g_profilerVisible))
     {
         g_applicationValues[g_profilerValueIndex] = App::s_deltaTime * 1000.0;
 
-        const auto applicationAvg = std::accumulate(g_applicationValues, g_applicationValues + PROFILER_VALUE_COUNT, 0.0) / PROFILER_VALUE_COUNT;
-        const auto gpuFrameAvg = g_gpuFrameProfiler.UpdateAndReturnAverage();
-        const auto presentAvg = g_presentProfiler.UpdateAndReturnAverage();
-        const auto frameFenceAvg = g_frameFenceProfiler.UpdateAndReturnAverage();
-        const auto presentWaitAvg = g_presentWaitProfiler.UpdateAndReturnAverage();
-        const auto swapChainAcquireAvg = g_swapChainAcquireProfiler.UpdateAndReturnAverage();
+        const double applicationAvg = std::accumulate(g_applicationValues, g_applicationValues + PROFILER_VALUE_COUNT, 0.0) / PROFILER_VALUE_COUNT;
+        double gpuFrameAvg = g_gpuFrameProfiler.UpdateAndReturnAverage();
+        double presentAvg = g_presentProfiler.UpdateAndReturnAverage();
+        double frameFenceAvg = g_frameFenceProfiler.UpdateAndReturnAverage();
+        double presentWaitAvg = g_presentWaitProfiler.UpdateAndReturnAverage();
+        double swapChainAcquireAvg = g_swapChainAcquireProfiler.UpdateAndReturnAverage();
 
         if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen))
         {
@@ -2802,20 +3002,24 @@ static void DrawProfiler()
             ImGui::Checkbox("Show FPS", &Config::ShowFPS.Value);
         }
 
-        if (g_userHeap.heap && g_userHeap.physicalHeap)
+        if (g_userHeap.heap != nullptr && g_userHeap.physicalHeap != nullptr)
         {
             if (ImGui::CollapsingHeader("Memory", ImGuiTreeNodeFlags_DefaultOpen))
             {
-                std::lock_guard heapLock(g_userHeap.mutex);
-                O1HeapDiagnostics heapDiagnostics = o1heapGetDiagnostics(g_userHeap.heap);
-
-                std::lock_guard physicalHeapLock(g_userHeap.physicalMutex);
-                O1HeapDiagnostics physicalHeapDiagnostics = o1heapGetDiagnostics(g_userHeap.physicalHeap);
+                O1HeapDiagnostics diagnostics, physicalDiagnostics;
+                {
+                    std::lock_guard lock(g_userHeap.mutex);
+                    diagnostics = o1heapGetDiagnostics(g_userHeap.heap);
+                }
+                {
+                    std::lock_guard lock(g_userHeap.physicalMutex);
+                    physicalDiagnostics = o1heapGetDiagnostics(g_userHeap.physicalHeap);
+                }
 
                 if (ImGui::BeginTable("Memory", 2))
                 {
-                    IMGUI_GENERIC_ROW("Heap Allocated", "%.2f MiB", double(heapDiagnostics.allocated / (1024.0 * 1024.0)));
-                    IMGUI_GENERIC_ROW("Physical Heap Allocated", "%.2f MiB", double(physicalHeapDiagnostics.allocated / (1024.0 * 1024.0)));
+                    IMGUI_GENERIC_ROW("Heap Allocated", "%d MB", int32_t(diagnostics.allocated / (1024 * 1024)));
+                    IMGUI_GENERIC_ROW("Physical Heap Allocated", "%d MB", int32_t(diagnostics.allocated / (1024 * 1024)));
 
                     ImGui::EndTable();
                 }
@@ -2824,7 +3028,7 @@ static void DrawProfiler()
 
         if (ImGui::CollapsingHeader("GPU", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            const char* backend{};
+            std::string backend;
 
             switch (g_backend)
             {
@@ -2839,26 +3043,24 @@ static void DrawProfiler()
                 case Backend::METAL:
                     backend = "Metal";
                     break;
-
-                default:
-                    backend = "Unknown";
-                    break;
             }
 
             if (ImGui::BeginTable("GPU", 2))
             {
-                IMGUI_GENERIC_ROW("API", "%s", backend);
+                IMGUI_GENERIC_ROW("API", "%s", backend.c_str());
 
-                if (const auto pSDLVideoDriver = SDL_GetCurrentVideoDriver())
+                if (auto pSDLVideoDriver = SDL_GetCurrentVideoDriver())
+                {
                     IMGUI_GENERIC_ROW("SDL Video Driver", "%s", pSDLVideoDriver);
+                }
 
                 IMGUI_GENERIC_ROW("Device", "%s", g_device->getDescription().name.c_str());
                 IMGUI_GENERIC_ROW("Device Type", "%s", DeviceTypeName(g_device->getDescription().type));
-                IMGUI_GENERIC_ROW("VRAM", "%.2f MiB", double(g_device->getDescription().dedicatedVideoMemory) / (1024.0 * 1024.0));
-                IMGUI_GENERIC_ROW("GPU Waits", "%u", g_waitForGPUCount);
-                IMGUI_GENERIC_ROW("Buffer Uploads", "%u", g_bufferUploadCount.load());
+                IMGUI_GENERIC_ROW("VRAM", "%.2f MiB", (double)(g_device->getDescription().dedicatedVideoMemory) / (1024.0 * 1024.0));
+                IMGUI_GENERIC_ROW("GPU Waits", "%d", int32_t(g_waitForGPUCount));
+                IMGUI_GENERIC_ROW("Buffer Uploads", "%d", int32_t(g_bufferUploadCount));
 
-                IMGUI_GENERIC_ROW("Resolution", "%ux%u (%ux%u)",
+                IMGUI_GENERIC_ROW("Resolution", "%dx%d (%dx%d)",
                     Video::s_viewportWidth, Video::s_viewportHeight,
                     uint32_t(round(Video::s_viewportWidth * Config::ResolutionScale)),
                     uint32_t(round(Video::s_viewportHeight * Config::ResolutionScale)));
@@ -2867,41 +3069,6 @@ static void DrawProfiler()
             }
 
             ImGui::Separator();
-
-#ifdef ASYNC_PSO_DEBUG
-            if (ImGui::TreeNode("Async PSO"))
-            {
-                ImGui::Indent();
-
-                if (ImGui::BeginTable("Async PSO", 2))
-                {
-                    IMGUI_GENERIC_ROW("Pipelines created in render thread", "%u", g_pipelinesCreatedInRenderThread.load());
-                    IMGUI_GENERIC_ROW("Pipelines created asynchronously", "%u", g_pipelinesCreatedAsynchronously.load());
-                    IMGUI_GENERIC_ROW("Pipelines dropped", "%u", g_pipelinesDropped.load());
-                    IMGUI_GENERIC_ROW("Pipelines currently compiling", "%u", g_pipelinesCurrentlyCompiling.load());
-                    IMGUI_GENERIC_ROW("Compiling pipeline tasks", "%u", g_compilingPipelineTaskCount.load());
-                    IMGUI_GENERIC_ROW("Pending pipeline tasks", "%u", g_pendingPipelineTaskCount.load());
-
-                    ImGui::EndTable();
-                }
-
-                ImGui::Separator();
-                
-                if (ImGui::TreeNode("Pipeline States"))
-                {
-                    ImGui::Indent();
-
-                    std::lock_guard lock(g_debugMutex);
-                    ImGui::TextUnformatted(g_pipelineDebugText.c_str());
-
-                    ImGui::Unindent();
-                    ImGui::TreePop();
-                }
-
-                ImGui::Unindent();
-                ImGui::TreePop();
-            }
-#endif
 
             if (ImGui::TreeNode("Devices"))
             {
@@ -2955,49 +3122,310 @@ static void DrawProfiler()
     ImGui::End();
     ImGui::PopFont();
 
-    font->Scale = defaultFontScale;
+    font->Scale = defaultScale;
 }
 
-static void DrawFPS()
+static void UpdateFPS()
 {
-    if (!Config::ShowFPS)
-        return;
+    static double updateTime{};
+    static double totalDeltaTime{};
+    static uint32_t totalDeltaCount{};
+    static bool hasStarted{};
 
-    double time = ImGui::GetTime();
-    static double updateTime = time;
-    static double fps = 0;
-    static double totalDeltaTime = 0.0;
-    static uint32_t totalDeltaCount = 0;
-
-    totalDeltaTime += g_presentProfiler.value.load();
-    totalDeltaCount++;
-
-    if (time - updateTime >= 1.0f)
+    if (!Config::ShowFPS && !Config::ShowSystemInfoOverlay)
     {
-        fps = 1000.0 / std::max(totalDeltaTime / double(totalDeltaCount), 1.0);
+        g_currentFps = 0.0;
+        updateTime = 0.0;
+        totalDeltaTime = 0.0;
+        totalDeltaCount = 0;
+        hasStarted = false;
+        return;
+    }
+
+    const double time = ImGui::GetTime();
+    if (!hasStarted)
+    {
+        updateTime = time;
+        hasStarted = true;
+    }
+
+    const double presentMs = g_presentProfiler.value.load();
+    if (std::isfinite(presentMs) && presentMs > 0.0)
+    {
+        totalDeltaTime += presentMs;
+        ++totalDeltaCount;
+    }
+
+    if (time - updateTime >= 1.0)
+    {
+        if (totalDeltaCount > 0)
+            g_currentFps = 1000.0 / std::max(totalDeltaTime / double(totalDeltaCount), 1.0);
+
         updateTime = time;
         totalDeltaTime = 0.0;
         totalDeltaCount = 0;
     }
+}
+
+static void DrawFPS()
+{
+    // The system panel already contains FPS; avoid drawing the same metric twice.
+    if (!Config::ShowFPS || Config::ShowSystemInfoOverlay)
+        return;
 
     auto drawList = ImGui::GetBackgroundDrawList();
-
-    auto fmt = fmt::format("FPS: {:.2f}", fps);
+    auto fpsText = fmt::format("FPS: {:.2f}", g_currentFps);
     auto font = ImFontAtlasSnapshot::GetFont("FOT-RodinPro-DB.otf");
+    if (font == nullptr)
+        return;
+
     auto fontSize = Scale(10);
-    auto textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0, fmt.c_str());
+    auto textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0, fpsText.c_str());
 
     ImVec2 min = { Scale(40), Scale(30) };
     ImVec2 max = { min.x + std::max(Scale(75), textSize.x + Scale(10)), min.y + Scale(15) };
     ImVec2 textPos = { min.x + Scale(2), CENTRE_TEXT_VERT(min, max, textSize) + Scale(0.2f) };
 
     drawList->AddRectFilled(min, max, IM_COL32(0, 0, 0, 200));
-    drawList->AddText(font, fontSize, textPos, IM_COL32_WHITE, fmt.c_str());
+    drawList->AddText(font, fontSize, textPos, IM_COL32_WHITE, fpsText.c_str());
+}
+
+static void DrawModStartupStatus()
+{
+    static bool hasStarted = false;
+    static double startTime = 0.0;
+    static size_t detectedModCount = 0;
+
+    if (!App::s_isInit)
+        return;
+
+    if (!hasStarted)
+    {
+        detectedModCount = ModLoader::GetUserMods().size();
+        if (detectedModCount == 0)
+            return;
+
+        startTime = ImGui::GetTime();
+        hasStarted = true;
+    }
+
+    constexpr double STATUS_DURATION_SECONDS = 6.0;
+    const double elapsed = ImGui::GetTime() - startTime;
+    if (detectedModCount == 0 || elapsed < 0.0 || elapsed >= STATUS_DURATION_SECONDS)
+        return;
+
+    std::string message = Localise("Mods_DetectedStatus");
+    const size_t placeholder = message.find("{}");
+    if (placeholder != std::string::npos)
+        message.replace(placeholder, 2, std::to_string(detectedModCount));
+
+    ImFont* font = ImFontAtlasSnapshot::GetFont("FOT-RodinPro-DB.otf");
+    if (font == nullptr)
+        return;
+
+    const float fontSize = Scale(11);
+    const ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0, message.c_str());
+    const float paddingX = Scale(18);
+    const float paddingY = Scale(10);
+    const float panelWidth = std::max(Scale(220), textSize.x + paddingX * 2.0f);
+    const float panelHeight = textSize.y + paddingY * 2.0f;
+    const ImVec2 panelMin = {
+        (float(Video::s_viewportWidth) - panelWidth) * 0.5f,
+        std::max(Scale(12), float(Video::s_viewportHeight) - panelHeight - Scale(34))
+    };
+    const ImVec2 panelMax = { panelMin.x + panelWidth, panelMin.y + panelHeight };
+    const ImVec2 textPos = { panelMin.x + (panelWidth - textSize.x) * 0.5f, panelMin.y + paddingY };
+
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    drawList->AddRectFilled(panelMin, panelMax, IM_COL32(8, 11, 18, 232), Scale(5));
+    drawList->AddRect(panelMin, panelMax, IM_COL32(244, 190, 70, 235), Scale(5), 0, Scale(1));
+    drawList->AddText(font, fontSize, textPos, IM_COL32(255, 255, 255, 255), message.c_str());
+}
+
+static void DrawSystemInfoOverlay()
+{
+    if (!Config::ShowSystemInfoOverlay || !g_device || !g_swapChain)
+        return;
+
+    ImFont* font = ImFontAtlasSnapshot::GetFont("FOT-RodinPro-DB.otf");
+    if (font == nullptr)
+        return;
+
+    ps5vk_overlay::Style style;
+    style.position = { Scale(14), Scale(14) };
+    style.fontSize = Scale(10);
+    style.padding = Scale(8);
+    style.lineHeight = Scale(14);
+    style.sectionFontSize = Scale(8);
+    style.sectionLineHeight = Scale(11);
+    style.sectionHeaderGap = Scale(2);
+    style.sectionGap = Scale(6);
+    style.rowGap = Scale(1);
+    style.accentWidth = Scale(3);
+    style.sectionAccentWidth = Scale(2);
+    style.borderThickness = Scale(1);
+    style.shadowOffset = Scale(2);
+    style.cornerRadius = Scale(7);
+    style.title = "MARATHON RECOMP";
+    style.titleFontSize = Scale(13);
+    style.titleLineHeight = Scale(17);
+    style.titleGap = Scale(5);
+
+    // PS5VK-Overlay's default theme: PlayStation blue (#0078F7).
+    constexpr ImU32 Accent = IM_COL32(0, 120, 247, 255);
+    style.accentColor = IM_COL32(0, 120, 247, 235);
+    style.accentTextColor = Accent;
+    style.sectionTitleColor = Accent;
+    style.titleColor = Accent;
+    style.separatorColor = IM_COL32(0, 120, 247, 72);
+    style.backgroundColor = IM_COL32(9, 13, 20, 226);
+    style.borderColor = IM_COL32(255, 255, 255, 35);
+    style.shadowColor = IM_COL32(0, 0, 0, 90);
+    style.accentFirstLine = true;
+
+    std::vector<ps5vk_overlay::Section> sections;
+    sections.reserve(6);
+
+    ps5vk_overlay::Section performance{ Localise("SystemInfo_SectionPerformance"), {} };
+    if (g_currentFps > 0.0 && std::isfinite(g_currentFps))
+        performance.rows.push_back(fmt::format("{}: {:.1f}", Localise("SystemInfo_FPS"), g_currentFps));
+    else
+        performance.rows.push_back(fmt::format("{}: --", Localise("SystemInfo_FPS")));
+
+    const double cpuUpdateMs = double(App::s_deltaTime) * 1000.0;
+    if (std::isfinite(cpuUpdateMs) && cpuUpdateMs > 0.0)
+        performance.rows.push_back(fmt::format("{}: {:.2f} ms", Localise("SystemInfo_CPU"), cpuUpdateMs));
+
+    const double gpuFrameMs = g_gpuFrameProfiler.value.load();
+    if (std::isfinite(gpuFrameMs) && gpuFrameMs > 0.0)
+        performance.rows.push_back(fmt::format("{}: {:.2f} ms", Localise("SystemInfo_GPUFrame"), gpuFrameMs));
+
+    const auto& deviceDescription = g_device->getDescription();
+    if (!deviceDescription.name.empty())
+        performance.rows.push_back(fmt::format("{}: {}", Localise("SystemInfo_GPU"), deviceDescription.name));
+    performance.rows.push_back(fmt::format("{}: {} {}", Localise("SystemInfo_FPSCap"), Config::FPS.Value, Localise("SystemInfo_FPS")));
+    sections.emplace_back(std::move(performance));
+
+#if defined(__PROSPERO__)
+    {
+        static constexpr uint32_t kSceKernelErrorEinval = 0x80020016u;
+        static double nextSensorUpdate = 0.0;
+        static std::vector<int> supportedSocSensorIds;
+        static std::vector<std::pair<int, int>> socTemperatures;
+        static bool socSensorsDiscovered = false;
+        static bool socSensorDiagnosticLogged = false;
+        const double currentTime = ImGui::GetTime();
+
+        // Sensor 0 is the GPU-temperature reading. Match Unleashed's overlay by
+        // querying only the remaining supported SoC sensors.
+        if (!socSensorsDiscovered)
+        {
+            for (int sensorIndex = 1; sensorIndex < 16; ++sensorIndex)
+            {
+                int probeTemperature = 0;
+                const int sensorResult = sceKernelGetSocSensorTemperature(sensorIndex, &probeTemperature);
+                if (static_cast<uint32_t>(sensorResult) == kSceKernelErrorEinval)
+                    break;
+
+                if (sensorResult == 0)
+                    supportedSocSensorIds.push_back(sensorIndex);
+                else if (!socSensorDiagnosticLogged)
+                {
+                    LOGFN("SoC sensor {} discovery failed (result={}, raw value={})",
+                        sensorIndex, sensorResult, probeTemperature);
+                    socSensorDiagnosticLogged = true;
+                }
+            }
+            socSensorsDiscovered = true;
+        }
+
+        if (currentTime >= nextSensorUpdate)
+        {
+            nextSensorUpdate = currentTime + 1.0;
+            socTemperatures.clear();
+            for (int sensorIndex : supportedSocSensorIds)
+            {
+                int temperature = 0;
+                const int sensorResult = sceKernelGetSocSensorTemperature(sensorIndex, &temperature);
+                if (sensorResult == 0)
+                    socTemperatures.emplace_back(sensorIndex, temperature);
+                else if (!socSensorDiagnosticLogged)
+                {
+                    LOGFN("SoC sensor {} query failed (result={}, raw value={})",
+                        sensorIndex, sensorResult, temperature);
+                    socSensorDiagnosticLogged = true;
+                }
+            }
+        }
+
+        ps5vk_overlay::Section socSensors{ Localise("SystemInfo_SectionSoCSensors"), {} };
+        for (const auto& [sensorIndex, temperature] : socTemperatures)
+        {
+            socSensors.rows.push_back(fmt::format("{} {}: {} °C",
+                Localise("SystemInfo_SoCSensor"), sensorIndex, temperature));
+        }
+        if (!socSensors.rows.empty())
+            sections.emplace_back(std::move(socSensors));
+    }
+#endif
+
+    auto appendHeapStats = [&](ps5vk_overlay::Section& section,
+                               const char* label,
+                               O1HeapInstance* heap,
+                               Mutex& mutex)
+    {
+        if (heap == nullptr)
+            return;
+
+        O1HeapDiagnostics diagnostics{};
+        {
+            std::lock_guard lock(mutex);
+            diagnostics = o1heapGetDiagnostics(heap);
+        }
+
+        constexpr double kBytesPerMebibyte = 1024.0 * 1024.0;
+        section.rows.push_back(fmt::format("{}: {:.1f}/{:.1f} MiB (peak {:.1f})",
+            Localise(label),
+            double(diagnostics.allocated) / kBytesPerMebibyte,
+            double(diagnostics.capacity) / kBytesPerMebibyte,
+            double(diagnostics.peak_allocated) / kBytesPerMebibyte));
+    };
+
+    ps5vk_overlay::Section memory{ Localise("SystemInfo_SectionMemory"), {} };
+    appendHeapStats(memory, "SystemInfo_GameHeap", g_userHeap.heap, g_userHeap.mutex);
+    appendHeapStats(memory, "SystemInfo_PhysicalHeap", g_userHeap.physicalHeap, g_userHeap.physicalMutex);
+    if (!memory.rows.empty())
+        sections.emplace_back(std::move(memory));
+
+    ps5vk_overlay::Section display{ Localise("SystemInfo_SectionDisplay"), {} };
+    if (Video::s_viewportWidth > 0 && Video::s_viewportHeight > 0)
+    {
+        const uint32_t renderWidth = uint32_t(std::round(Video::s_viewportWidth * Config::ResolutionScale.Value));
+        const uint32_t renderHeight = uint32_t(std::round(Video::s_viewportHeight * Config::ResolutionScale.Value));
+        display.rows.push_back(fmt::format("{}: {}x{}", Localise("SystemInfo_Resolution"), renderWidth, renderHeight));
+    }
+    if (g_swapChain->getWidth() > 0 && g_swapChain->getHeight() > 0)
+    {
+        display.rows.push_back(fmt::format("{}: {}x{}", Localise("SystemInfo_OutputResolution"),
+            g_swapChain->getWidth(), g_swapChain->getHeight()));
+    }
+    display.rows.push_back(fmt::format("{}: {:.0f}%", Localise("SystemInfo_RenderScale"),
+        Config::ResolutionScale.Value * 100.0f));
+    if (!display.rows.empty())
+        sections.emplace_back(std::move(display));
+
+    ps5vk_overlay::Section paths{ Localise("SystemInfo_SectionPaths"), {} };
+    paths.rows.push_back(fmt::format("{}: {}", Localise("SystemInfo_UserDataPath"), GetUserPath().string()));
+    paths.rows.push_back(fmt::format("{}: {}", Localise("SystemInfo_ExecutablePath"), os::process::GetExecutablePath().string()));
+    paths.rows.push_back(fmt::format("{}: {}", Localise("SystemInfo_GameMount"), os::process::GetExecutableRoot().string()));
+    sections.emplace_back(std::move(paths));
+
+    ps5vk_overlay::Draw(sections, font, style);
 }
 
 static void DrawImGui()
 {
-    ImGui_ImplSDL3_NewFrame();
+    ImGui_ImplSDL2_NewFrame();
 
     auto& io = ImGui::GetIO();
     io.DisplaySize = { float(Video::s_viewportWidth), float(Video::s_viewportHeight) };
@@ -3034,9 +3462,26 @@ static void DrawImGui()
 
     ResetImGuiCallbacks();
 
+#ifdef ASYNC_PSO_DEBUG
+    if (ImGui::Begin("Async PSO Stats"))
+    {
+        ImGui::Text("Pipelines Created In Render Thread: %d", g_pipelinesCreatedInRenderThread.load());
+        ImGui::Text("Pipelines Created Asynchronously: %d", g_pipelinesCreatedAsynchronously.load());
+        ImGui::Text("Pipelines Dropped: %d", g_pipelinesDropped.load());
+        ImGui::Text("Pipelines Currently Compiling: %d", g_pipelinesCurrentlyCompiling.load());
+        ImGui::Text("Compiling Pipeline Task Count: %d", g_compilingPipelineTaskCount.load());
+        ImGui::Text("Pending Pipeline Task Count: %d", g_pendingPipelineTaskCount.load());
+
+        std::lock_guard lock(g_debugMutex);
+        ImGui::TextUnformatted(g_pipelineDebugText.c_str());
+    }
+    ImGui::End();
+#endif
+
     UpdateImGuiUtils();
     AchievementMenu::Draw();
     OptionsMenu::Draw();
+    ModsMenu::Draw();
     InstallerWizard::Draw();
     ButtonWindow::Draw();
     MessageWindow::Draw();
@@ -3046,8 +3491,11 @@ static void DrawImGui()
 
     assert(ImGui::GetBackgroundDrawList()->_ClipRectStack.Size == 1 && "Some clip rects were not removed from the stack!");
 
+    UpdateFPS();
     DrawFPS();
+    DrawSystemInfoOverlay();
     DrawProfiler();
+    DrawModStartupStatus();
     ImGui::Render();
 
     auto drawData = ImGui::GetDrawData();
@@ -3325,6 +3773,12 @@ PPC_FUNC(sub_8260A9D0)
 
 void Video::Present() 
 {
+    static std::atomic<uint64_t> presentSerial{ 0 };
+    const uint64_t thisPresent = presentSerial.fetch_add(1, std::memory_order_relaxed) + 1;
+    const bool tracePresent = thisPresent <= 8 || (thisPresent % 120) == 0;
+    if (tracePresent)
+        LOGF_PS5_GPU_DIAG("GPU: Video::Present begin serial={} frame={} swapchain_valid={} backbuffer_index={}",
+                      thisPresent, g_frame, g_swapChainValid, g_backBufferIndex);
     g_readyForCommands = false;
 
     RenderCommand cmd;
@@ -3335,21 +3789,40 @@ void Video::Present()
 
     cmd.type = RenderCommandType::ExecuteCommandList;
     g_renderQueue.enqueue(cmd);
+    if (tracePresent)
+        LOGF_PS5_GPU_DIAG("GPU: Video::Present serial={} queued ExecuteCommandList; waiting for render thread", thisPresent);
+
+    // All the shaders are available at this point. We can precompile embedded PSOs then.
+    if (g_shouldPrecompilePipelines)
+    {
+        // EnqueuePipelineTask(PipelineTaskType::PrecompilePipelines, {});
+        g_shouldPrecompilePipelines = false;
+    }
 
     g_executedCommandList.wait(false);
     g_executedCommandList = false;
+    if (tracePresent)
+        LOGF_PS5_GPU_DIAG("GPU: Video::Present serial={} render thread completed command list", thisPresent);
 
     if (g_swapChainValid)
     {
         if (g_pendingWaitOnSwapChain)
         {
             g_presentWaitProfiler.Begin();
+            if (tracePresent)
+                LOGF_PS5_GPU_DIAG("GPU: Video::Present serial={} swapchain wait begin", thisPresent);
             g_swapChain->wait(); // Never gonna happen outside loading threads as explained above.
+            if (tracePresent)
+                LOGF_PS5_GPU_DIAG("GPU: Video::Present serial={} swapchain wait end", thisPresent);
             g_presentWaitProfiler.End();
         }
 
         RenderCommandSemaphore* signalSemaphores[] = { g_renderSemaphores[g_backBufferIndex].get() };
+        if (tracePresent)
+            LOGF_PS5_GPU_DIAG("GPU: Video::Present serial={} swapchain present begin index={}", thisPresent, g_backBufferIndex);
         g_swapChainValid = g_swapChain->present(g_backBufferIndex, signalSemaphores, std::size(signalSemaphores));
+        if (tracePresent)
+            LOGF_PS5_GPU_DIAG("GPU: Video::Present serial={} swapchain present end valid={}", thisPresent, g_swapChainValid);
     }
 
     g_pendingWaitOnSwapChain = true;
@@ -3360,7 +3833,11 @@ void Video::Present()
     if (g_commandListStates[g_frame])
     {
         g_frameFenceProfiler.Begin();
+        if (tracePresent)
+            LOGF_PS5_GPU_DIAG("GPU: Video::Present serial={} frame-fence wait begin frame={}", thisPresent, g_frame);
         g_queue->waitForCommandFence(g_commandFences[g_frame].get());
+        if (tracePresent)
+            LOGF_PS5_GPU_DIAG("GPU: Video::Present serial={} frame-fence wait end frame={}", thisPresent, g_frame);
         g_frameFenceProfiler.End();
         g_commandListStates[g_frame] = false;
 
@@ -3411,6 +3888,8 @@ void Video::Present()
     }
 
     g_presentProfiler.Reset();
+    if (tracePresent)
+        LOGF_PS5_GPU_DIAG("GPU: Video::Present end serial={} next_frame={}", thisPresent, g_frame);
 }
 
 void Video::Resize(uint32_t width, uint32_t height)
@@ -3646,9 +4125,7 @@ void Video::Resize(uint32_t width, uint32_t height)
 
 void Video::StartPipelinePrecompilation()
 {
-    LoadingPatches::Events.push_back(&g_loadingPipelineCompilationEvent);
-
-    EnqueuePipelineTask(PipelineTaskType::PrecompilePipelines);
+    g_shouldPrecompilePipelines = true;
 }
 
 static void SetRootDescriptor(const UploadAllocation& allocation, size_t index)
@@ -3662,10 +4139,14 @@ static void SetRootDescriptor(const UploadAllocation& allocation, size_t index)
 }
 
 static void ProcExecuteCommandList(const RenderCommand& cmd)
-{    
+{
+    LOGF_PS5_GPU_DIAG("GPU: ProcExecuteCommandList begin frame={} swapchain_valid={} backbuffer_index={}",
+                  g_frame, g_swapChainValid, g_backBufferIndex);
     if (g_swapChainValid)
     {
+        LOG_PS5_GPU_DIAG("GPU: acquiring swapchain texture begin");
         auto swapChainTexture = g_swapChain->getTexture(g_backBufferIndex);
+        LOGF_PS5_GPU_DIAG("GPU: acquiring swapchain texture end ptr=0x{:x}", reinterpret_cast<uintptr_t>(swapChainTexture));
         if (g_backBuffer->texture == g_intermediaryBackBufferTexture.get())
         {
             struct
@@ -3727,7 +4208,9 @@ static void ProcExecuteCommandList(const RenderCommand& cmd)
 
     auto &commandList = g_commandLists[g_frame];
     commandList->writeTimestamp(g_queryPools[g_frame].get(), 1);
+    LOGF_PS5_GPU_DIAG("GPU: end command list begin ptr=0x{:x}", reinterpret_cast<uintptr_t>(commandList.get()));
     commandList->end();
+    LOG_PS5_GPU_DIAG("GPU: end command list returned");
 
     if (g_swapChainValid)
     {
@@ -3735,28 +4218,35 @@ static void ProcExecuteCommandList(const RenderCommand& cmd)
         RenderCommandSemaphore *waitSemaphores[] = { g_acquireSemaphores[g_frame].get() };
         RenderCommandSemaphore *signalSemaphores[] = { g_renderSemaphores[g_backBufferIndex].get() };
 
+        LOG_PS5_GPU_DIAG("GPU: execute command list with swapchain semaphores begin");
         g_queue->executeCommandLists(
             commandLists, std::size(commandLists),
             waitSemaphores, std::size(waitSemaphores),
             signalSemaphores, std::size(signalSemaphores),
             g_commandFences[g_frame].get());
+        LOG_PS5_GPU_DIAG("GPU: execute command list with swapchain semaphores returned");
     }
     else
     {
+        LOG_PS5_GPU_DIAG("GPU: execute command list begin (swapchain invalid)");
         g_queue->executeCommandLists(commandList.get(), g_commandFences[g_frame].get());
+        LOG_PS5_GPU_DIAG("GPU: execute command list returned (swapchain invalid)");
     }
 
     g_commandListStates[g_frame] = true;
 
     g_executedCommandList = true;
     g_executedCommandList.notify_one();
+    LOGF_PS5_GPU_DIAG("GPU: ProcExecuteCommandList complete frame={}", g_frame);
 }
 
 static void ProcBeginCommandList(const RenderCommand& cmd)
 {
+    LOGF_PS5_GPU_DIAG("GPU: ProcBeginCommandList begin frame={}", g_frame);
     g_renderFrame = g_frame;
     DestructTempResources();
     BeginCommandList();
+    LOGF_PS5_GPU_DIAG("GPU: ProcBeginCommandList end frame={}", g_frame);
 }
 
 static GuestSurface* GetBackBuffer()
@@ -4071,12 +4561,21 @@ static SurfaceVariant* AcquireSurfaceVariant(uint32_t base, uint32_t width, uint
 
 static GuestSurface* CreateSurface(uint32_t width, uint32_t height, uint32_t format, uint32_t multiSample, GuestSurfaceCreateParams* params)
 {
-    RenderSampleCounts sampleCount;
-    if (multiSample == 0) {
-        sampleCount = RenderSampleCount::COUNT_1;
-    } else {
-        sampleCount = multiSample == 1 ? RenderSampleCount::COUNT_2 : RenderSampleCount::COUNT_4;
+    // Follow Unleashed's MSAA-off gate, but keep Marathon's existing guest-to-host
+    // sample mapping unchanged for all enabled settings.
+    const RenderSampleCounts sampleCount = multiSample == 0 || Config::AntiAliasing == EAntiAliasing::Off
+        ? RenderSampleCount::COUNT_1
+        : (multiSample == 1 ? RenderSampleCount::COUNT_2 : RenderSampleCount::COUNT_4);
+
+#if defined(__PROSPERO__)
+    static std::atomic<uint32_t> ps5SurfaceLogCount = 0;
+    if (ps5SurfaceLogCount.fetch_add(1, std::memory_order_relaxed) < 32)
+    {
+        LOGF_PS5_GPU_DIAG("GPU: CreateSurface width={} height={} format=0x{:x} guestMultiSample={} antiAliasing={} hostSamples={} edramParams={}",
+                      width, height, format, multiSample,
+                      static_cast<uint32_t>(Config::AntiAliasing.Value), sampleCount, params != nullptr);
     }
+#endif
 
     const RenderFormat renderFormat = ConvertFormat(format);
     const bool isDepthStencil = RenderFormatIsDepth(renderFormat);
@@ -4257,6 +4756,12 @@ static void SetRenderTarget(GuestDevice* device, uint32_t index, GuestSurface* r
 static void ProcSetRenderTarget(const RenderCommand& cmd)
 {
     const auto& args = cmd.setRenderTarget;
+#if defined(__PROSPERO__)
+    LOGF_PS5_GPU_DIAG("GPU: ProcSetRenderTarget surface=0x{:x} sampleCount={} format={}",
+                  reinterpret_cast<uintptr_t>(args.renderTarget),
+                  args.renderTarget != nullptr ? static_cast<uint32_t>(args.renderTarget->sampleCount) : 0,
+                  args.renderTarget != nullptr ? static_cast<uint32_t>(args.renderTarget->format) : 0);
+#endif
     SetDirtyValue(g_dirtyStates.renderTargetAndDepthStencil, g_renderTarget, args.renderTarget);
     SetDirtyValue(g_dirtyStates.pipelineState, g_pipelineState.renderTargetFormat, args.renderTarget != nullptr ? args.renderTarget->format : RenderFormat::UNKNOWN);
     SetDirtyValue(g_dirtyStates.pipelineState, g_pipelineState.sampleCount, args.renderTarget != nullptr ? args.renderTarget->sampleCount : RenderSampleCount::COUNT_1);
@@ -4278,6 +4783,12 @@ static void SetDepthStencilSurface(GuestDevice* device, GuestSurface* depthStenc
 static void ProcSetDepthStencilSurface(const RenderCommand& cmd)
 {
     const auto& args = cmd.setDepthStencilSurface;
+#if defined(__PROSPERO__)
+    LOGF_PS5_GPU_DIAG("GPU: ProcSetDepthStencilSurface surface=0x{:x} sampleCount={} format={}",
+                  reinterpret_cast<uintptr_t>(args.depthStencil),
+                  args.depthStencil != nullptr ? static_cast<uint32_t>(args.depthStencil->sampleCount) : 0,
+                  args.depthStencil != nullptr ? static_cast<uint32_t>(args.depthStencil->format) : 0);
+#endif
 
     SetDirtyValue(g_dirtyStates.renderTargetAndDepthStencil, g_depthStencil, args.depthStencil);
     SetDirtyValue(g_dirtyStates.pipelineState, g_pipelineState.depthStencilFormat, args.depthStencil != nullptr ? args.depthStencil->format : RenderFormat::UNKNOWN);
@@ -4328,6 +4839,8 @@ static bool PopulateBarriersForStretchRect(GuestSurface* renderTarget, GuestSurf
 static void ExecutePendingStretchRectCommands(GuestSurface* renderTarget, GuestSurface* depthStencil)
 {
     auto& commandList = g_commandLists[g_frame];
+    LOGF_PS5_GPU_DIAG("GPU: ExecutePendingStretchRectCommands begin frame={} renderTarget=0x{:x} depthStencil=0x{:x}",
+                  g_frame, reinterpret_cast<uintptr_t>(renderTarget), reinterpret_cast<uintptr_t>(depthStencil));
 
     for (const auto surface : { renderTarget, depthStencil })
     {
@@ -4335,9 +4848,17 @@ static void ExecutePendingStretchRectCommands(GuestSurface* renderTarget, GuestS
         {
             const bool multiSampling = surface->sampleCount != RenderSampleCount::COUNT_1;
             const bool isDepthStencil = RenderFormatIsDepth(surface->format);
+            LOGF_PS5_GPU_DIAG("GPU: resolve source surface=0x{:x} format={} samples={} depth={} destination_count={} resolveModes={}",
+                          reinterpret_cast<uintptr_t>(surface), static_cast<uint32_t>(surface->format),
+                          static_cast<uint32_t>(surface->sampleCount), isDepthStencil,
+                          surface->destinationTextures.size(), g_capabilities.resolveModes);
 
+            size_t destinationIndex = 0;
             for (const auto [texture, slice] : surface->destinationTextures)
             {
+                LOGF_PS5_GPU_DIAG("GPU: resolve destination index={} texture=0x{:x} slice={} format={} size={}x{}",
+                              destinationIndex, reinterpret_cast<uintptr_t>(texture), slice,
+                              static_cast<uint32_t>(texture->format), texture->width, texture->height);
                 bool shaderResolve = true;
 
                 if (multiSampling)
@@ -4345,9 +4866,17 @@ static void ExecutePendingStretchRectCommands(GuestSurface* renderTarget, GuestS
                     if (!isDepthStencil || g_capabilities.resolveModes)
                     {
                         if (isDepthStencil)
+                        {
+                            LOG_PS5_GPU_DIAG("GPU: native depth MSAA resolve begin mode=MIN");
                             commandList->resolveTextureRegion(texture->texture, 0, 0, surface->texture, nullptr, RenderResolveMode::MIN);
+                            LOG_PS5_GPU_DIAG("GPU: native depth MSAA resolve end");
+                        }
                         else
+                        {
+                            LOG_PS5_GPU_DIAG("GPU: native color MSAA resolve begin");
                             commandList->resolveTexture(texture->texture, surface->texture);
+                            LOG_PS5_GPU_DIAG("GPU: native color MSAA resolve end");
+                        }
 
                         shaderResolve = false;
                     }
@@ -4355,6 +4884,8 @@ static void ExecutePendingStretchRectCommands(GuestSurface* renderTarget, GuestS
 
                 if (shaderResolve)
                 {
+                    LOGF_PS5_GPU_DIAG("GPU: shader resolve path selected depth={} multisampled={} resolveModes={}",
+                                  isDepthStencil, multiSampling, g_capabilities.resolveModes);
                     RenderPipeline* pipeline = nullptr;
 
                     if (multiSampling)
@@ -4393,7 +4924,12 @@ static void ExecutePendingStretchRectCommands(GuestSurface* renderTarget, GuestS
                                 desc.renderTargetFormat[0] = texture->format;
                                 desc.renderTargetBlend[0] = RenderBlendDesc::Copy();
                                 desc.renderTargetCount = 1;
+                                LOGF_PS5_GPU_DIAG("GPU: dynamic MSAA color resolve pipeline create begin samples={} source_format={} destination_format={} shader=0x{:x}",
+                                              static_cast<uint32_t>(surface->sampleCount), static_cast<uint32_t>(surface->format),
+                                              static_cast<uint32_t>(texture->format), reinterpret_cast<uintptr_t>(desc.pixelShader));
                                 resolveMsaaColorPipeline = g_device->createGraphicsPipeline(desc);
+                                LOGF_PS5_GPU_DIAG("GPU: dynamic MSAA color resolve pipeline create end ptr=0x{:x}",
+                                              reinterpret_cast<uintptr_t>(resolveMsaaColorPipeline.get()));
                             }
 
                             pipeline = resolveMsaaColorPipeline.get();
@@ -4417,16 +4953,23 @@ static void ExecutePendingStretchRectCommands(GuestSurface* renderTarget, GuestS
                                 desc.renderTargetFormat[0] = texture->format;
                                 desc.renderTargetBlend[0] = RenderBlendDesc::Copy();
                                 desc.renderTargetCount = 1;
+                                LOGF_PS5_GPU_DIAG("GPU: dynamic copy-color pipeline create begin destination_format={} shader=0x{:x}",
+                                              static_cast<uint32_t>(texture->format), reinterpret_cast<uintptr_t>(desc.pixelShader));
                                 copyColorPipeline = g_device->createGraphicsPipeline(desc);
+                                LOGF_PS5_GPU_DIAG("GPU: dynamic copy-color pipeline create end ptr=0x{:x}",
+                                              reinterpret_cast<uintptr_t>(copyColorPipeline.get()));
                             }
 
                             pipeline = copyColorPipeline.get();
                         }
                     }
 
+                    LOGF_PS5_GPU_DIAG("GPU: shader resolve selected pipeline=0x{:x} texture=0x{:x}",
+                                  reinterpret_cast<uintptr_t>(pipeline), reinterpret_cast<uintptr_t>(texture));
                     auto& framebuffer = texture->framebuffers[slice];
                     if (framebuffer == nullptr)
                     {
+                        LOGF_PS5_GPU_DIAG("GPU: resolve framebuffer creation begin depth={} slice={}", isDepthStencil, slice);
                         if (isDepthStencil)
                         {
                             RenderTextureViewDesc viewDesc;
@@ -4435,7 +4978,9 @@ static void ExecutePendingStretchRectCommands(GuestSurface* renderTarget, GuestS
                             viewDesc.mipLevels = texture->mipLevels;
                             viewDesc.arrayIndex = slice;
                             viewDesc.arraySize = 1;
+                            LOG_PS5_GPU_DIAG("GPU: resolve depth texture-view creation begin");
                             auto& view = texture->framebufferViews.emplace_back(texture->texture->createTextureView(viewDesc));
+                            LOGF_PS5_GPU_DIAG("GPU: resolve depth texture-view creation end ptr=0x{:x}", reinterpret_cast<uintptr_t>(view.get()));
 
                             RenderFramebufferDesc desc;
                             desc.depthAttachmentView = view.get();
@@ -4448,6 +4993,7 @@ static void ExecutePendingStretchRectCommands(GuestSurface* renderTarget, GuestS
                             desc.colorAttachmentsCount = 1;
                             framebuffer = g_device->createFramebuffer(desc);
                         }
+                        LOGF_PS5_GPU_DIAG("GPU: resolve framebuffer creation end ptr=0x{:x}", reinterpret_cast<uintptr_t>(framebuffer.get()));
                     }
 
                     if (g_framebuffer != framebuffer.get())
@@ -4456,11 +5002,13 @@ static void ExecutePendingStretchRectCommands(GuestSurface* renderTarget, GuestS
                         g_framebuffer = framebuffer.get();
                     }
 
+                    LOG_PS5_GPU_DIAG("GPU: shader resolve command recording begin");
                     commandList->setPipeline(pipeline);
                     commandList->setViewports(RenderViewport(0.0f, 0.0f, float(texture->width), float(texture->height), 0.0f, 1.0f));
                     commandList->setScissors(RenderRect(0, 0, texture->width, texture->height));
                     commandList->setGraphicsPushConstants(0, &surface->descriptorIndex, 0, sizeof(uint32_t));
                     commandList->drawInstanced(6, 1, 0, 0);
+                    LOG_PS5_GPU_DIAG("GPU: shader resolve command recording end");
 
                     g_dirtyStates.renderTargetAndDepthStencil = true;
                     g_dirtyStates.viewport = true;
@@ -4482,11 +5030,15 @@ static void ExecutePendingStretchRectCommands(GuestSurface* renderTarget, GuestS
                     if (g_textures[i] == texture)
                         SetTextureInRenderThread(i, texture);
                 }
+                LOGF_PS5_GPU_DIAG("GPU: resolve destination index={} completed", destinationIndex);
+                ++destinationIndex;
             }
 
             surface->destinationTextures.clear();
+            LOG_PS5_GPU_DIAG("GPU: resolve source surface destinations cleared");
         }
     }
+    LOG_PS5_GPU_DIAG("GPU: ExecutePendingStretchRectCommands end");
 }
 
 static void ProcExecutePendingStretchRectCommands(const RenderCommand& cmd)
@@ -4895,43 +5447,10 @@ static void ProcSetScissorRect(const RenderCommand& cmd)
     SetDirtyValue<int32_t>(g_dirtyStates.scissorRect, g_scissorRect.right, args.right);
 }
 
-static RenderShader* GetReplacementShader(GuestShader* guestShader)
-{
-    if (guestShader == nullptr)
-        return nullptr;
-
-    if (guestShader->shaderCacheEntry != nullptr)
-    {
-        switch (guestShader->shaderCacheEntry->hash)
-        {
-        case 0x3687D038CE7D0BEA:
-        case 0xB4DA7A442DBB16CC:
-            if (Config::RadialBlur == ERadialBlur::Enhanced)
-                return g_enhancedBurnoutBlurVSShader.get();
-            break;
-        case 0xDA58F0110A8595D9:
-        case 0x845A4EF989446C01:
-            if (Config::RadialBlur == ERadialBlur::Enhanced)
-                return g_enhancedBurnoutBlurPSShader.get();
-            break;
-        case 0x88EB0AA82E4257B0:
-            return g_MoviePSShader.get();
-        default:
-            break;
-        }
-    }
-
-    return nullptr;
-}
-
 static RenderShader* GetOrLinkShader(GuestShader* guestShader, uint32_t specConstants)
 {
-    auto* replacementShader = GetReplacementShader(guestShader);
-    if (replacementShader != nullptr)
-        return replacementShader;
-
     if (g_backend != Backend::D3D12 ||
-        guestShader->shaderCacheEntry == nullptr ||
+        guestShader->shaderCacheEntry == nullptr || 
         guestShader->shaderCacheEntry->specConstantsMask == 0)
     {
         std::lock_guard lock(guestShader->mutex);
@@ -4954,7 +5473,7 @@ static RenderShader* GetOrLinkShader(GuestShader* guestShader, uint32_t specCons
             }
             case Backend::D3D12:
             {
-                guestShader->shader = g_device->createShader(g_shaderCache.get() + guestShader->shaderCacheEntry->dxilOffset,
+                guestShader->shader = g_device->createShader(g_shaderCache.get() + guestShader->shaderCacheEntry->dxilOffset, 
                     guestShader->shaderCacheEntry->dxilSize, "shaderMain", RenderShaderFormat::DXIL);
                 break;
             }
@@ -5103,21 +5622,6 @@ static RenderShader* GetOrLinkShader(GuestShader* guestShader, uint32_t specCons
     return shader;
 }
 
-static XXH64_hash_t GetPipelineStateHash(const PipelineState& pipelineState)
-{
-    XXH64_hash_t seed = 0;
-
-    // If shaders need to be replaced, make sure they result in a different pipeline hash.
-    struct {
-        RenderShader* vertex;
-        RenderShader* pixel;
-    } replacements(GetReplacementShader(pipelineState.vertexShader), GetReplacementShader(pipelineState.pixelShader));
-    if (replacements.vertex != nullptr || replacements.pixel != nullptr)
-        seed = XXH3_64bits(&replacements, sizeof(replacements));
-
-    return XXH3_64bits_withSeed(&pipelineState, sizeof(pipelineState), seed);
-}
-
 static void SanitizePipelineState(PipelineState& pipelineState)
 {
     if (!pipelineState.zEnable && !pipelineState.stencilEnable)
@@ -5190,19 +5694,37 @@ static void SanitizePipelineState(PipelineState& pipelineState)
 
 static std::unique_ptr<RenderPipeline> CreateGraphicsPipeline(const PipelineState& pipelineState)
 {
+    LOGF_PS5_GPU_DIAG("GPU: CreateGraphicsPipeline begin vs=0x{:x} ps=0x{:x} vertex_decl=0x{:x} color_format={} depth_format={} samples={} spec_constants=0x{:x}",
+                  reinterpret_cast<uintptr_t>(pipelineState.vertexShader), reinterpret_cast<uintptr_t>(pipelineState.pixelShader),
+                  reinterpret_cast<uintptr_t>(pipelineState.vertexDeclaration), static_cast<uint32_t>(pipelineState.renderTargetFormat),
+                  static_cast<uint32_t>(pipelineState.depthStencilFormat), static_cast<uint32_t>(pipelineState.sampleCount),
+                  pipelineState.specConstants);
 #ifdef ASYNC_PSO_DEBUG
     ++g_pipelinesCurrentlyCompiling;
 #endif
 
     RenderGraphicsPipelineDesc desc;
     desc.pipelineLayout = g_pipelineLayout.get();
+    LOG_PS5_GPU_DIAG("GPU: linking graphics-pipeline vertex shader begin");
     desc.vertexShader = GetOrLinkShader(pipelineState.vertexShader, pipelineState.specConstants);
+    LOGF_PS5_GPU_DIAG("GPU: linking graphics-pipeline vertex shader end ptr=0x{:x}", reinterpret_cast<uintptr_t>(desc.vertexShader));
     if (pipelineState.enableConditionalSurvey)
+    {
+        LOG_PS5_GPU_DIAG("GPU: linking conditional-survey pixel shader begin");
         desc.pixelShader = GetOrLinkShader(g_conditionalSurveyPSShader.get(), pipelineState.specConstants);
+        LOGF_PS5_GPU_DIAG("GPU: linking conditional-survey pixel shader end ptr=0x{:x}", reinterpret_cast<uintptr_t>(desc.pixelShader));
+    }
     else if (pipelineState.pixelShader != nullptr)
+    {
+        LOG_PS5_GPU_DIAG("GPU: linking graphics-pipeline pixel shader begin");
         desc.pixelShader = GetOrLinkShader(pipelineState.pixelShader, pipelineState.specConstants);
+        LOGF_PS5_GPU_DIAG("GPU: linking graphics-pipeline pixel shader end ptr=0x{:x}", reinterpret_cast<uintptr_t>(desc.pixelShader));
+    }
     else
+    {
         desc.pixelShader = nullptr;
+        LOG_PS5_GPU_DIAG("GPU: graphics pipeline has no pixel shader");
+    }
     desc.depthFunction = pipelineState.zFunc;
     desc.depthEnabled = pipelineState.zEnable;
     desc.depthWriteEnabled = pipelineState.zWriteEnable;
@@ -5263,7 +5785,7 @@ static std::unique_ptr<RenderPipeline> CreateGraphicsPipeline(const PipelineStat
         auto& inputElement = pipelineState.vertexDeclaration->inputElements[i];
         auto& inputSlotIndex = inputSlotIndices[inputElement.slotIndex];
     
-        if (inputSlotIndex == NULL)
+        if (inputSlotIndex == 0)
             inputSlotIndex = ++inputSlotCount;
     
         auto& inputSlot = inputSlots[inputSlotIndex - 1];
@@ -5275,7 +5797,12 @@ static std::unique_ptr<RenderPipeline> CreateGraphicsPipeline(const PipelineStat
     desc.inputSlots = inputSlots;
     desc.inputSlotsCount = inputSlotCount;
     
+    LOGF_PS5_GPU_DIAG("GPU: backend createGraphicsPipeline begin vs=0x{:x} ps=0x{:x} samples={} render_targets={} input_elements={} input_slots={} spec_constants=0x{:x}",
+                  reinterpret_cast<uintptr_t>(desc.vertexShader), reinterpret_cast<uintptr_t>(desc.pixelShader),
+                  static_cast<uint32_t>(desc.multisampling.sampleCount), desc.renderTargetCount,
+                  desc.inputElementsCount, desc.inputSlotsCount, pipelineState.specConstants);
     auto pipeline = g_device->createGraphicsPipeline(desc);
+    LOGF_PS5_GPU_DIAG("GPU: backend createGraphicsPipeline returned ptr=0x{:x}", reinterpret_cast<uintptr_t>(pipeline.get()));
 
 #ifdef ASYNC_PSO_DEBUG
     --g_pipelinesCurrentlyCompiling;
@@ -5288,68 +5815,77 @@ static RenderPipeline* CreateGraphicsPipelineInRenderThread(PipelineState pipeli
 {
     SanitizePipelineState(pipelineState);
 
-    XXH64_hash_t hash = GetPipelineStateHash(pipelineState);
+    XXH64_hash_t hash = XXH3_64bits(&pipelineState, sizeof(pipelineState));
+    LOGF_PS5_GPU_DIAG("GPU: render-thread pipeline request hash=0x{:x} vs=0x{:x} ps=0x{:x} samples={} color_format={} depth_format={}",
+                  hash, reinterpret_cast<uintptr_t>(pipelineState.vertexShader), reinterpret_cast<uintptr_t>(pipelineState.pixelShader),
+                  static_cast<uint32_t>(pipelineState.sampleCount), static_cast<uint32_t>(pipelineState.renderTargetFormat),
+                  static_cast<uint32_t>(pipelineState.depthStencilFormat));
     auto& pipeline = g_pipelines[hash];
     if (pipeline == nullptr)
     {
+        LOGF_PS5_GPU_DIAG("GPU: render-thread pipeline cache miss hash=0x{:x}; create begin", hash);
         pipeline = CreateGraphicsPipeline(pipelineState);
+        LOGF_PS5_GPU_DIAG("GPU: render-thread pipeline cache miss hash=0x{:x}; create end ptr=0x{:x}",
+                      hash, reinterpret_cast<uintptr_t>(pipeline.get()));
 
 #ifdef ASYNC_PSO_DEBUG
-        if (App::s_isLoading)
+        bool loading = *SWA::SGlobals::ms_IsLoading;
+
+        if (loading)
             ++g_pipelinesCreatedAsynchronously;
         else
             ++g_pipelinesCreatedInRenderThread;
 
-        pipeline->setName(fmt::format("{} {} {} {:X}", App::s_isLoading ? "ASYNC" : "",
+        pipeline->setName(fmt::format("{} {} {} {:X}", loading ? "ASYNC" : "",
             pipelineState.vertexShader->name, pipelineState.pixelShader != nullptr ? pipelineState.pixelShader->name : "<none>", hash));
         
-        if (!App::s_isLoading)
+        if (!loading)
         {
             std::lock_guard lock(g_debugMutex);
             g_pipelineDebugText = fmt::format(
-                "{:X}\n"
-                "    vertexShader: {}\n"
-                "    pixelShader: {}\n"
-                "    vertexDeclaration: {:X}\n"
-                "    zEnable: {}\n"
-                "    zWriteEnable: {}\n"
-                "    stencilEnable: {}\n"
-                "    stencilTwoSided: {}\n"
-                "    srcBlend: {}\n"
-                "    destBlend: {}\n"
-                "    cullMode: {}\n"
-                "    frontFace: {}\n"
-                "    zFunc: {}\n"
-                "    stencilFunc: {}\n"
-                "    stencilFail: {}\n"
-                "    stencilZFail: {}\n"
-                "    stencilPass: {}\n"
-                "    stencilFuncCCW: {}\n"
-                "    stencilFailCCW: {}\n"
-                "    stencilZFailCCW: {}\n"
-                "    stencilPassCCW: {}\n"
-                "    stencilMask: {}\n"
-                "    stencilWriteMask: {}\n"
-                "    stencilRef: {}\n"
-                "    alphaBlendEnable: {}\n"
-                "    blendOp: {}\n"
-                "    slopeScaledDepthBias: {}\n"
-                "    depthBias: {}\n"
-                "    srcBlendAlpha: {}\n"
-                "    destBlendAlpha: {}\n"
-                "    blendOpAlpha: {}\n"
-                "    colorWriteEnable: {:X}\n"
-                "    primitiveTopology: {}\n"
-                "    vertexStrides[0]: {}\n"
-                "    vertexStrides[1]: {}\n"
-                "    vertexStrides[2]: {}\n"
-                "    vertexStrides[3]: {}\n"
-                "    renderTargetFormat: {}\n"
-                "    depthStencilFormat: {}\n"
-                "    sampleCount: {}\n"
-                "    enableAlphaToCoverage: {}\n"
-                "    enableConditionalSurvey: {}\n"
-                "    specConstants: {:X}\n\n",
+                "PipelineState {:X}:\n"
+                "  vertexShader: {}\n"
+                "  pixelShader: {}\n"
+                "  vertexDeclaration: {:X}\n"
+                "  zEnable: {}\n"
+                "  zWriteEnable: {}\n"
+                "  stencilEnable: {}\n"
+                "  stencilTwoSided: {}\n"
+                "  srcBlend: {}\n"
+                "  destBlend: {}\n"
+                "  cullMode: {}\n"
+                "  frontFace: {}\n"
+                "  zFunc: {}\n"
+                "  stencilFunc: {}\n"
+                "  stencilFail: {}\n"
+                "  stencilZFail: {}\n"
+                "  stencilPass: {}\n"
+                "  stencilFuncCCW: {}\n"
+                "  stencilFailCCW: {}\n"
+                "  stencilZFailCCW: {}\n"
+                "  stencilPassCCW: {}\n"
+                "  stencilMask: {}\n"
+                "  stencilWriteMask: {}\n"
+                "  stencilRef: {}\n"
+                "  alphaBlendEnable: {}\n"
+                "  blendOp: {}\n"
+                "  slopeScaledDepthBias: {}\n"
+                "  depthBias: {}\n"
+                "  srcBlendAlpha: {}\n"
+                "  destBlendAlpha: {}\n"
+                "  blendOpAlpha: {}\n"
+                "  colorWriteEnable: {:X}\n"
+                "  primitiveTopology: {}\n"
+                "  vertexStrides[0]: {}\n"
+                "  vertexStrides[1]: {}\n"
+                "  vertexStrides[2]: {}\n"
+                "  vertexStrides[3]: {}\n"
+                "  renderTargetFormat: {}\n"
+                "  depthStencilFormat: {}\n"
+                "  sampleCount: {}\n"
+                "  enableAlphaToCoverage: {}\n"
+                "  enableConditionalSurvey: {}\n"
+                "  specConstants: {:X}\n",
                 hash,
                 pipelineState.vertexShader->name,
                 pipelineState.pixelShader != nullptr ? pipelineState.pixelShader->name : "<none>",
@@ -5401,6 +5937,11 @@ static RenderPipeline* CreateGraphicsPipelineInRenderThread(PipelineState pipeli
         std::lock_guard lock(g_pipelineCacheMutex);
         g_pipelineStatesToCache.emplace(hash, pipelineState);
 #endif
+    }
+    else
+    {
+        LOGF_PS5_GPU_DIAG("GPU: render-thread pipeline cache hit hash=0x{:x} ptr=0x{:x}",
+                      hash, reinterpret_cast<uintptr_t>(pipeline.get()));
     }
     
     return pipeline.get();
@@ -5578,7 +6119,7 @@ static void ProcSetSamplerState(const RenderCommand& cmd)
     if (dirty)
     {
         auto& [descriptorIndex, sampler] = g_samplerStates[XXH3_64bits(&samplerDesc, sizeof(RenderSamplerDesc))];
-        if (descriptorIndex == NULL)
+        if (descriptorIndex == 0)
         {
             descriptorIndex = g_samplerStates.size();
             sampler = g_device->createSampler(samplerDesc);
@@ -5634,10 +6175,19 @@ static constexpr float COMMON_SLOPE_SCALED_DEPTH_BIAS_VALUE = 1.0f;
 
 static void FlushRenderStateForRenderThread()
 {
+    static uint64_t flushSerial = 0;
+    const uint64_t thisFlush = ++flushSerial;
+    const bool traceFlush = thisFlush <= 32 || (thisFlush % 256) == 0;
     auto renderTarget = g_pipelineState.colorWriteEnable ? g_renderTarget : nullptr;
     auto depthStencil = g_pipelineState.zEnable || g_pipelineState.stencilEnable ? g_depthStencil : nullptr;
+    if (traceFlush)
+        LOGF_PS5_GPU_DIAG("GPU: FlushRenderState begin serial={} frame={} target=0x{:x} depth=0x{:x} pendingCopies={} pendingResolves={}",
+                      thisFlush, g_frame, reinterpret_cast<uintptr_t>(renderTarget), reinterpret_cast<uintptr_t>(depthStencil),
+                      g_pendingSurfaceCopies.size(), g_pendingResolves.size());
 
     bool foundAny = PopulateBarriersForStretchRect(renderTarget, depthStencil);
+    if (!g_pendingResolves.empty())
+        LOGF_PS5_GPU_DIAG("GPU: render-state flush serial={} resolving {} pending surface(s)", thisFlush, g_pendingResolves.size());
 
     auto aliasesBoundStorage = [&](GuestSurface* surface)
     {
@@ -5662,8 +6212,11 @@ static void FlushRenderStateForRenderThread()
 
     if (foundAny)
     {
+        LOGF_PS5_GPU_DIAG("GPU: render-state flush serial={} barriers for surface resolves begin", thisFlush);
         FlushBarriers();
+        LOGF_PS5_GPU_DIAG("GPU: render-state flush serial={} pending resolve/copy execution begin", thisFlush);
         ExecutePendingStretchRectCommands(renderTarget, depthStencil);
+        LOGF_PS5_GPU_DIAG("GPU: render-state flush serial={} primary resolve/copy execution end", thisFlush);
 
         for (const auto surface : g_pendingSurfaceCopies)
         {
@@ -5710,7 +6263,11 @@ static void FlushRenderStateForRenderThread()
 
     if (g_dirtyStates.pipelineState)
     {
+        if (traceFlush)
+            LOGF_PS5_GPU_DIAG("GPU: FlushRenderState serial={} pipeline state dirty; create/bind begin", thisFlush);
         commandList->setPipeline(CreateGraphicsPipelineInRenderThread(g_pipelineState));
+        if (traceFlush)
+            LOGF_PS5_GPU_DIAG("GPU: FlushRenderState serial={} pipeline bind complete", thisFlush);
 
         // D3D12 resets the depth bias values. Check if they need to be set again.
         if (g_capabilities.dynamicDepthBias && g_backend == Backend::D3D12)
@@ -5751,6 +6308,8 @@ static void FlushRenderStateForRenderThread()
         commandList->setIndexBuffer(&g_indexBufferView);
 
     g_dirtyStates = DirtyStates(false);
+    if (traceFlush)
+        LOGF_PS5_GPU_DIAG("GPU: FlushRenderState end serial={}", thisFlush);
 }
 
 static RenderPrimitiveTopology ConvertPrimitiveType(uint32_t primitiveType)
@@ -5844,6 +6403,7 @@ static void DrawPrimitiveUP(GuestDevice* device, uint32_t primitiveType, uint32_
     cmd.drawPrimitiveUP.vertexStreamZeroData = g_intermediaryUploadAllocator.allocate(vertexStreamZeroData, primitiveCount * vertexStreamZeroStride);
     cmd.drawPrimitiveUP.vertexStreamZeroSize = primitiveCount * vertexStreamZeroStride;
     cmd.drawPrimitiveUP.vertexStreamZeroStride = vertexStreamZeroStride;
+    cmd.drawPrimitiveUP.csdFilterState = g_csdFilterState;
     
     queue.submit();
 }
@@ -5869,6 +6429,13 @@ static void ProcDrawPrimitiveUP(const RenderCommand& cmd)
         indexCount = g_quadIndexData.prepare(args.primitiveCount);
     else if (!g_capabilities.triangleFan && args.primitiveType == D3DPT_TRIANGLEFAN)
         indexCount = g_triangleFanIndexData.prepare(args.primitiveCount);
+
+    if (args.csdFilterState != CsdFilterState::Unknown &&
+        (g_pipelineState.pixelShader == g_csdShader || g_pipelineState.pixelShader == g_csdFilterShader.get()))
+    {
+        SetDirtyValue(g_dirtyStates.pipelineState, g_pipelineState.pixelShader,
+            args.csdFilterState == CsdFilterState::On ? g_csdFilterShader.get() : g_csdShader);
+    }
 
     FlushRenderStateForRenderThread();
 
@@ -6246,13 +6813,15 @@ static ShaderCacheEntry* FindShaderCacheEntry(XXH64_hash_t hash)
     return findResult != end && findResult->hash == hash ? findResult : nullptr;
 }
 
-static GuestShader* GetOrCreateShader(XXH64_hash_t hash, ResourceType resourceType) {
+static GuestShader* CreateShader(const be<uint32_t>* function, ResourceType resourceType)
+{
+    XXH64_hash_t hash = XXH3_64bits(function, function[1] + function[2]);
+
     auto findResult = FindShaderCacheEntry(hash);
     GuestShader* shader = nullptr;
 
-    if (findResult == nullptr)
-    {
-        LOGF_WARNING("Shader not found by hash: {:x}", hash);
+    if (findResult == nullptr) {
+        LOGF_WARNING("Shader of function {:x} is not found by value: {:x}", reinterpret_cast<uintptr_t>(function), hash);
         LOG_WARNING("Perhaps the path to the required shader will be printed before this error");
         __builtin_trap();
     }
@@ -6261,10 +6830,15 @@ static GuestShader* GetOrCreateShader(XXH64_hash_t hash, ResourceType resourceTy
         if (findResult->guestShader == nullptr)
         {
             shader = g_userHeap.AllocPhysical<GuestShader>(resourceType);
-            shader->shaderCacheEntry = findResult;
-#ifdef ASYNC_PSO_DEBUG
-            shader->name = findResult->filename;
-#endif
+
+            if (hash == 0x85ED723035ECF535)
+                shader->shader = CREATE_SHADER(blend_color_alpha_ps);
+            else if (hash == 0xB1086A4947A797DE)
+                shader->shader = CREATE_SHADER(csd_no_tex_vs);
+            else if (hash == 0xB4CAFC034A37C8A8)
+                shader->shader = CREATE_SHADER(csd_vs);
+            else
+                shader->shaderCacheEntry = findResult;
 
             findResult->guestShader = shader;
         }
@@ -6279,13 +6853,10 @@ static GuestShader* GetOrCreateShader(XXH64_hash_t hash, ResourceType resourceTy
     else
         shader->AddRef();
 
-    return shader;
-}
+    if (hash == 0x31173204A896098A)
+        g_csdShader = shader;
 
-static GuestShader* CreateShader(const be<uint32_t>* function, ResourceType resourceType)
-{
-    XXH64_hash_t hash = XXH3_64bits(function, function[1] + function[2]);
-    return GetOrCreateShader(hash, resourceType);
+    return shader;
 }
 
 static GuestShader* CreateVertexShader(const be<uint32_t>* function) 
@@ -6304,6 +6875,17 @@ static void SetVertexShader(GuestDevice* device, GuestShader* shader)
 static void ProcSetVertexShader(const RenderCommand& cmd)
 {
     GuestShader* shader = cmd.setVertexShader.shader;
+
+    if (shader != nullptr &&
+    shader->shaderCacheEntry != nullptr)
+    {
+        if (shader->shaderCacheEntry->hash == 0x3687D038CE7D0BEA || shader->shaderCacheEntry->hash == 0xB4DA7A442DBB16CC)
+        {
+            if (Config::RadialBlur == ERadialBlur::Enhanced)
+                shader = g_enhancedBurnoutBlurVSShader.get();
+        }
+    }
+
     SetDirtyValue(g_dirtyStates.pipelineState, g_pipelineState.vertexShader, shader);
 }
 
@@ -6370,6 +6952,21 @@ static void SetPixelShader(GuestDevice* device, GuestShader* shader)
 static void ProcSetPixelShader(const RenderCommand& cmd)
 {
     GuestShader* shader = cmd.setPixelShader.shader;
+
+    if (shader != nullptr &&
+        shader->shaderCacheEntry != nullptr)
+    {
+        if (shader->shaderCacheEntry->hash == 0xDA58F0110A8595D9 || shader->shaderCacheEntry->hash == 0x845A4EF989446C01)
+        {
+            if (Config::RadialBlur == ERadialBlur::Enhanced)
+                shader = g_enhancedBurnoutBlurPSShader.get();
+        }
+        else if (shader->shaderCacheEntry->hash == 0x88EB0AA82E4257B0)
+        {
+            shader = g_MoviePSShader.get();
+        }
+    }
+
     SetDirtyValue(g_dirtyStates.pipelineState, g_pipelineState.pixelShader, shader);
 }
 
@@ -6457,23 +7054,71 @@ static void SetClipPlane(GuestDevice* device, uint32_t index, const be<float>* p
     SetDirtyValue(g_dirtyStates.sharedConstants, g_sharedConstants.clipPlane[3], plane[3].get());
 }
 
+static const char* RenderCommandTypeName(RenderCommandType type)
+{
+    switch (type)
+    {
+    case RenderCommandType::SetRenderState: return "SetRenderState";
+    case RenderCommandType::DestructResource: return "DestructResource";
+    case RenderCommandType::UnlockTextureRect: return "UnlockTextureRect";
+    case RenderCommandType::UnlockBuffer16: return "UnlockBuffer16";
+    case RenderCommandType::UnlockBuffer32: return "UnlockBuffer32";
+    case RenderCommandType::DrawImGui: return "DrawImGui";
+    case RenderCommandType::ExecuteCommandList: return "ExecuteCommandList";
+    case RenderCommandType::BeginCommandList: return "BeginCommandList";
+    case RenderCommandType::StretchRect: return "StretchRect";
+    case RenderCommandType::SetRenderTarget: return "SetRenderTarget";
+    case RenderCommandType::SetDepthStencilSurface: return "SetDepthStencilSurface";
+    case RenderCommandType::ExecutePendingStretchRectCommands: return "ExecutePendingStretchRectCommands";
+    case RenderCommandType::Clear: return "Clear";
+    case RenderCommandType::SetViewport: return "SetViewport";
+    case RenderCommandType::SetTexture: return "SetTexture";
+    case RenderCommandType::SetScissorRect: return "SetScissorRect";
+    case RenderCommandType::SetSamplerState: return "SetSamplerState";
+    case RenderCommandType::SetBooleans: return "SetBooleans";
+    case RenderCommandType::SetVertexShaderConstants: return "SetVertexShaderConstants";
+    case RenderCommandType::SetPixelShaderConstants: return "SetPixelShaderConstants";
+    case RenderCommandType::AddPipeline: return "AddPipeline";
+    case RenderCommandType::DrawPrimitive: return "DrawPrimitive";
+    case RenderCommandType::DrawIndexedPrimitive: return "DrawIndexedPrimitive";
+    case RenderCommandType::DrawPrimitiveUP: return "DrawPrimitiveUP";
+    case RenderCommandType::SetVertexDeclaration: return "SetVertexDeclaration";
+    case RenderCommandType::SetVertexShader: return "SetVertexShader";
+    case RenderCommandType::SetStreamSource: return "SetStreamSource";
+    case RenderCommandType::SetIndices: return "SetIndices";
+    case RenderCommandType::SetPixelShader: return "SetPixelShader";
+    case RenderCommandType::SetConditionalSurvey: return "SetConditionalSurvey";
+    case RenderCommandType::SetConditionalRendering: return "SetConditionalRendering";
+    default: return "Unknown";
+    }
+}
+
 static std::thread g_renderThread([]
     {
-        os::thread::SetCurrentThreadName("Render Thread");
-
 #ifdef _WIN32
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+        GuestThread::SetThreadName(GetCurrentThreadId(), "Render Thread");
 #endif
 
         RenderCommand commands[32];
+        uint64_t dispatchSerial = 0;
+        uint64_t batchSerial = 0;
 
         while (true)
         {
             size_t count = g_renderQueue.wait_dequeue_bulk(commands, std::size(commands));
+            if (batchSerial < 64 || (batchSerial % 128) == 0)
+                LOGF_PS5_GPU_DIAG("GPU: render thread dequeued batch={} command_count={}", batchSerial, count);
+            ++batchSerial;
 
             for (size_t i = 0; i < count; i++)
             {
                 auto& cmd = commands[i];
+                const bool traceDispatch = dispatchSerial < 256 || (dispatchSerial % 512) == 0;
+                if (traceDispatch)
+                    LOGF_PS5_GPU_DIAG("GPU: render dispatch begin sequence={} batch={} batch_index={} command={} type={}",
+                                  dispatchSerial, batchSerial - 1, i, RenderCommandTypeName(cmd.type),
+                                  static_cast<uint32_t>(cmd.type));
                 switch (cmd.type)
                 {
                 case RenderCommandType::SetRenderState:                    ProcSetRenderState(cmd); break;
@@ -6509,6 +7154,10 @@ static std::thread g_renderThread([]
                 case RenderCommandType::SetConditionalRendering:           ProcSetConditionalRendering(cmd); break;
                 default:                                                   assert(false && "Unrecognized render command type."); break;
                 }
+                if (traceDispatch)
+                    LOGF_PS5_GPU_DIAG("GPU: render dispatch end sequence={} command={}",
+                                  dispatchSerial, RenderCommandTypeName(cmd.type));
+                ++dispatchSerial;
             }
         }
     });
@@ -7069,44 +7718,57 @@ void MovieRendererMidAsmHook(PPCRegister& r3)
     device->dirtyFlags[3] = device->dirtyFlags[3].get() | 0xe0000000ull;
 }
 
-// This is passed to pipeline compilation threads to keep the loading screen busy until
+// Normally, we could delay setting IsMadeOne, but the game relies on that flag
+// being present to handle load priority. To work around that, we can prevent
+// IsMadeAll from being set until the compilation is finished. Time for a custom flag!
+enum
+{
+    eDatabaseDataFlags_CompilingPipelines = 0x80
+};
+
+// This is passed to pipeline compilation threads to keep the loading screen busy until 
 // all of them are finished. A shared pointer makes sure the destructor is called only once.
-struct PipelineTaskToken
-{
-    PipelineTaskType type{};
+//struct PipelineTaskToken
+//{
+//    PipelineTaskType type{};
+//    boost::shared_ptr<Hedgehog::Database::CDatabaseData> databaseData;
+//
+//    PipelineTaskToken() : databaseData()
+//    {
+//    }
+//
+//    PipelineTaskToken(const PipelineTaskToken&) = delete;
+//
+//    PipelineTaskToken(PipelineTaskToken&& other)
+//        : type(std::exchange(other.type, PipelineTaskType::Null))
+//        , databaseData(std::exchange(other.databaseData, nullptr))
+//    {
+//    }
+//
+//    ~PipelineTaskToken()
+//    {
+//        if (type != PipelineTaskType::Null)
+//        {
+//            if (databaseData.get() != nullptr)
+//                databaseData->m_Flags &= ~eDatabaseDataFlags_CompilingPipelines;
+//
+//            if ((--g_compilingPipelineTaskCount) == 0)
+//                g_compilingPipelineTaskCount.notify_one();
+//        }
+//    }
+//};
 
-    PipelineTaskToken()
-    {
-    }
+//struct PipelineStateQueueItem
+//{
+//    XXH64_hash_t pipelineHash;
+//    PipelineState pipelineState;
+//    std::shared_ptr<PipelineTaskToken> token;
+//#ifdef ASYNC_PSO_DEBUG
+//    std::string pipelineName;
+//#endif
+//};
 
-    PipelineTaskToken(const PipelineTaskToken&) = delete;
-
-    PipelineTaskToken(PipelineTaskToken&& other)
-        : type(std::exchange(other.type, PipelineTaskType::Null))
-    {
-    }
-
-    ~PipelineTaskToken()
-    {
-        if (type != PipelineTaskType::Null)
-        {
-            if ((--g_compilingPipelineTaskCount) == 0)
-                g_compilingPipelineTaskCount.notify_one();
-        }
-    }
-};
-
-struct PipelineStateQueueItem
-{
-    XXH64_hash_t pipelineHash;
-    PipelineState pipelineState;
-    std::shared_ptr<PipelineTaskToken> token;
-#ifdef ASYNC_PSO_DEBUG
-    std::string pipelineName;
-#endif
-};
-
-static moodycamel::BlockingConcurrentQueue<PipelineStateQueueItem> g_pipelineStateQueue;
+//static moodycamel::BlockingConcurrentQueue<PipelineStateQueueItem> g_pipelineStateQueue;
 
 static void CompilePipeline(XXH64_hash_t pipelineHash, const PipelineState& pipelineState
 #ifdef ASYNC_PSO_DEBUG
@@ -7129,46 +7791,46 @@ static void CompilePipeline(XXH64_hash_t pipelineHash, const PipelineState& pipe
 
 static void PipelineCompilerThread()
 {
-    os::thread::SetCurrentThreadName("Pipeline Compiler Thread");
-
 #ifdef _WIN32
     int threadPriority = THREAD_PRIORITY_LOWEST;
     SetThreadPriority(GetCurrentThread(), threadPriority);
+    GuestThread::SetThreadName(GetCurrentThreadId(), "Pipeline Compiler Thread");
 #endif
 
     std::unique_ptr<GuestThreadContext> ctx;
 
-    while (true)
-    {
-        PipelineStateQueueItem queueItem;
-        g_pipelineStateQueue.wait_dequeue(queueItem);
-
-        if (ctx == nullptr)
-            ctx = std::make_unique<GuestThreadContext>(0);
-
-#ifdef _WIN32
-        int newThreadPriority = threadPriority;
-
-        if (App::s_isLoading)
-            newThreadPriority = THREAD_PRIORITY_HIGHEST;
-        else
-            newThreadPriority = THREAD_PRIORITY_LOWEST;
-
-        if (newThreadPriority != threadPriority)
-        {
-            SetThreadPriority(GetCurrentThread(), newThreadPriority);
-            threadPriority = newThreadPriority;
-        }
-#endif
-
-        CompilePipeline(queueItem.pipelineHash, queueItem.pipelineState
-#ifdef ASYNC_PSO_DEBUG
-            , queueItem.pipelineName.c_str()
-#endif
-        );
-
-        std::this_thread::yield();
-    }
+//    while (true)
+//    {
+//        PipelineStateQueueItem queueItem;
+//        g_pipelineStateQueue.wait_dequeue(queueItem);
+//
+//        if (ctx == nullptr)
+//            ctx = std::make_unique<GuestThreadContext>(0);
+//
+//#ifdef _WIN32
+//        int newThreadPriority = threadPriority;
+//
+//        bool loading = *SWA::SGlobals::ms_IsLoading;
+//        if (loading)
+//            newThreadPriority = THREAD_PRIORITY_HIGHEST;
+//        else
+//            newThreadPriority = THREAD_PRIORITY_LOWEST;
+//
+//        if (newThreadPriority != threadPriority)
+//        {
+//            SetThreadPriority(GetCurrentThread(), newThreadPriority);
+//            threadPriority = newThreadPriority;
+//        }
+//#endif
+//
+//        CompilePipeline(queueItem.pipelineHash, queueItem.pipelineState
+//#ifdef ASYNC_PSO_DEBUG
+//            , queueItem.pipelineName.c_str()
+//#endif
+//        );
+//
+//        std::this_thread::yield();
+//    }
 }
 
 static std::vector<std::unique_ptr<std::thread>> g_pipelineCompilerThreads = []()
@@ -7190,66 +7852,737 @@ static constexpr uint32_t PARTICLE_MATERIAL_VFTABLE = 0x8211F198;
 // If nothing was compiled, the local "token" variable will get destructed with RAII instead.
 struct PipelineTaskTokenPair
 {
-    PipelineTaskToken token;
-    std::shared_ptr<PipelineTaskToken> sharedToken;
+//    PipelineTaskToken token;
+//    std::shared_ptr<PipelineTaskToken> sharedToken;
 };
 
 // Having this separate, because I don't want to lock a mutex in the render thread before
 // every single draw. Might be worth profiling to see if it actually has an impact and merge them.
 static xxHashMap<PipelineState> g_asyncPipelineStates;
 
-static void EnqueueGraphicsPipelineCompilation(
-    const PipelineState& pipelineState,
-    PipelineTaskTokenPair& tokenPair,
-    const char* name,
-    bool isPrecompiledPipeline = false)
+//static void EnqueueGraphicsPipelineCompilation(
+//    const PipelineState& pipelineState,
+//    PipelineTaskTokenPair& tokenPair,
+//    const char* name,
+//    bool isPrecompiledPipeline = false)
+//{
+//    XXH64_hash_t hash = XXH3_64bits(&pipelineState, sizeof(pipelineState));
+//    bool shouldCompile = g_asyncPipelineStates.emplace(hash, pipelineState).second;
+//
+//    if (shouldCompile)
+//    {
+//        bool loading = *SWA::SGlobals::ms_IsLoading;
+//        if (!loading && isPrecompiledPipeline)
+//        {
+//            // We can just compile here during the logos.
+//            CompilePipeline(hash, pipelineState
+//#ifdef ASYNC_PSO_DEBUG
+//                , fmt::format("CACHE {} {:X}", name, hash)
+//#endif
+//            );
+//        }
+//        else
+//        {
+//            if (tokenPair.sharedToken == nullptr && tokenPair.token.type != PipelineTaskType::Null)
+//                tokenPair.sharedToken = std::make_shared<PipelineTaskToken>(std::move(tokenPair.token));
+//
+//            PipelineStateQueueItem queueItem;
+//            queueItem.pipelineHash = hash;
+//            queueItem.pipelineState = pipelineState;
+//            queueItem.token = tokenPair.sharedToken;
+//#ifdef ASYNC_PSO_DEBUG
+//            queueItem.pipelineName = fmt::format("ASYNC {} {:X}", name, hash);
+//#endif
+//            g_pipelineStateQueue.enqueue(queueItem);
+//        }
+//    }
+//
+//#ifdef PSO_CACHING_CLEANUP
+//    if (shouldCompile && isPrecompiledPipeline)
+//    {
+//        std::lock_guard lock(g_pipelineCacheMutex);
+//        g_pipelineStatesToCache.emplace(hash, pipelineState);
+//    }
+//#endif
+//
+//#ifdef PSO_CACHING
+//    if (!isPrecompiledPipeline)
+//    {
+//        std::lock_guard lock(g_pipelineCacheMutex);
+//        g_pipelineStatesToCache.erase(hash);
+//    }
+//#endif
+//}
+
+struct CompilationArgs
 {
-    XXH64_hash_t hash = GetPipelineStateHash(pipelineState);
-    bool shouldCompile = g_asyncPipelineStates.emplace(hash, pipelineState).second;
+    PipelineTaskTokenPair tokenPair;
+    bool noGI{};
+    bool hasMoreThanOneBone{};
+    bool velocityMapQuickStep{};
+    bool objectIcon{};
+};
 
-    if (shouldCompile)
-    {
-        if (!App::s_isLoading && isPrecompiledPipeline)
-        {
-            // We can just compile here during the logos.
-            CompilePipeline(hash, pipelineState
-#ifdef ASYNC_PSO_DEBUG
-                , fmt::format("CACHE {} {:X}", name, hash)
-#endif
-            );
-        }
-        else
-        {
-            if (tokenPair.sharedToken == nullptr && tokenPair.token.type != PipelineTaskType::Null)
-                tokenPair.sharedToken = std::make_shared<PipelineTaskToken>(std::move(tokenPair.token));
+enum class MeshLayer
+{
+    Opaque,
+    Transparent,
+    PunchThrough,
+    Special
+};
 
-            PipelineStateQueueItem queueItem;
-            queueItem.pipelineHash = hash;
-            queueItem.pipelineState = pipelineState;
-            queueItem.token = tokenPair.sharedToken;
-#ifdef ASYNC_PSO_DEBUG
-            queueItem.pipelineName = fmt::format("ASYNC {} {:X}", name, hash);
-#endif
-            g_pipelineStateQueue.enqueue(queueItem);
-        }
-    }
+struct Mesh
+{
+    uint32_t vertexSize{};
+    uint32_t morphTargetVertexSize{};
+    GuestVertexDeclaration* vertexDeclaration{};
+//    Hedgehog::Mirage::CMaterialData* material{};
+    MeshLayer layer{};
+    bool morphModel{};
+};
 
-#ifdef PSO_CACHING_CLEANUP
-    if (shouldCompile && isPrecompiledPipeline)
-    {
-        std::lock_guard lock(g_pipelineCacheMutex);
-        g_pipelineStatesToCache.emplace(hash, pipelineState);
-    }
-#endif
+//static void CompileMeshPipeline(const Mesh& mesh, CompilationArgs& args)
+//{
+//    if (mesh.material == nullptr || mesh.material->m_spShaderListData.get() == nullptr)
+//        return;
+//
+//    auto& shaderList = mesh.material->m_spShaderListData;
+//
+//    bool isFur = !mesh.morphModel && !args.instancing &&
+//        strstr(shaderList->m_TypeAndName.c_str(), "Fur") != nullptr;
+//
+//    bool isSky = !mesh.morphModel && !args.instancing &&
+//        strstr(shaderList->m_TypeAndName.c_str(), "Sky") != nullptr;
+//
+//    bool isSonicMouth = !mesh.morphModel && !args.instancing &&
+//        strcmp(mesh.material->m_TypeAndName.c_str() + 2, "sonic_gm_mouth_duble") == 0 &&
+//        strcmp(shaderList->m_TypeAndName.c_str() + 3, "SonicSkin_dspf[b]") == 0;
+//
+//    bool compiledOutsideMainFramebuffer = !args.instancing && !isFur && !isSky;
+//
+//    bool constTexCoord;
+//    if (args.instancing)
+//    {
+//        constTexCoord = false;
+//    }
+//    else
+//    {
+//        constTexCoord = true;
+//        if (mesh.material->m_spTexsetData.get() != nullptr)
+//        {
+//            for (size_t i = 1; i < mesh.material->m_spTexsetData->m_TextureList.size(); i++)
+//            {
+//                if (mesh.material->m_spTexsetData->m_TextureList[i]->m_TexcoordIndex !=
+//                    mesh.material->m_spTexsetData->m_TextureList[0]->m_TexcoordIndex)
+//                {
+//                    constTexCoord = false;
+//                    break;
+//                }
+//            }
+//        }
+//    }
+//
+//    // Shadow pipeline.
+//    // if (compiledOutsideMainFramebuffer && (mesh.layer == MeshLayer::Opaque || mesh.layer == MeshLayer::PunchThrough))
+//    // {
+//    //     PipelineState pipelineState{};
+//
+//    //     if (mesh.layer == MeshLayer::PunchThrough)
+//    //     {
+//    //         pipelineState.vertexShader = FindShaderCacheEntry(0xDD4FA7BB53876300)->guestShader;
+//    //         pipelineState.pixelShader = FindShaderCacheEntry(0xE2ECA594590DDE8B)->guestShader;
+//    //     }
+//    //     else
+//    //     {
+//    //         pipelineState.vertexShader = FindShaderCacheEntry(0x8E4BB23465BD909E)->guestShader;
+//    //     }
+//
+//    //     pipelineState.vertexDeclaration = mesh.vertexDeclaration;
+//    //     pipelineState.cullMode = mesh.material->m_DoubleSided ? RenderCullMode::NONE : RenderCullMode::BACK;
+//    //     pipelineState.zFunc = RenderComparisonFunction::LESS_EQUAL;
+//
+//    //     if (g_capabilities.dynamicDepthBias)
+//    //     {
+//    //         // Put common depth bias values for reducing unnecessary calls.
+//    //         if (g_backend == Backend::D3D12)
+//    //         {
+//    //             pipelineState.depthBias = COMMON_DEPTH_BIAS_VALUE;
+//    //             pipelineState.slopeScaledDepthBias = COMMON_SLOPE_SCALED_DEPTH_BIAS_VALUE;
+//    //         }
+//    //     }
+//    //     else
+//    //     {
+//    //         pipelineState.depthBias = (1 << 24) * (*reinterpret_cast<be<float>*>(g_memory.Translate(0x83302760)));
+//    //         pipelineState.slopeScaledDepthBias = *reinterpret_cast<be<float>*>(g_memory.Translate(0x83302764));
+//    //     }
+//
+//    //     pipelineState.colorWriteEnable = 0;
+//    //     pipelineState.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_STRIP;
+//    //     pipelineState.vertexStrides[0] = mesh.vertexSize;
+//    //     pipelineState.depthStencilFormat = RenderFormat::D32_FLOAT;
+//
+//    //     if (mesh.layer == MeshLayer::PunchThrough)
+//    //         pipelineState.specConstants |= SPEC_CONSTANT_ALPHA_TEST;
+//
+//    //     const char* name = (mesh.layer == MeshLayer::PunchThrough ? "MakeShadowMapTransparent" : "MakeShadowMap");
+//    //     SanitizePipelineState(pipelineState);
+//    //     EnqueueGraphicsPipelineCompilation(pipelineState, args.tokenPair, name);
+//
+//    //     // Morph models have 4 targets where unused targets default to the first vertex stream.
+//    //     if (mesh.morphModel)
+//    //     {
+//    //         for (size_t i = 0; i < 5; i++)
+//    //         {
+//    //             for (size_t j = 0; j < 4; j++)
+//    //                 pipelineState.vertexStrides[j + 1] = i > j ? mesh.morphTargetVertexSize : mesh.vertexSize;
+//
+//    //             SanitizePipelineState(pipelineState);
+//    //             EnqueueGraphicsPipelineCompilation(pipelineState, args.tokenPair, name);
+//    //         }
+//    //     }
+//    // }
+//
+//    // // Motion blur pipeline. We could normally do the player here only, but apparently Werehog enemies also have object blur.
+//    // // TODO: Do punch through meshes get rendered?
+//    // if (!mesh.morphModel && compiledOutsideMainFramebuffer && args.hasMoreThanOneBone && mesh.layer == MeshLayer::Opaque)
+//    // {
+//    //     PipelineState pipelineState{};
+//    //     pipelineState.vertexShader = FindShaderCacheEntry(0x4620B236DC38100C)->guestShader;
+//    //     pipelineState.pixelShader = FindShaderCacheEntry(0xBBDB735BEACC8F41)->guestShader;
+//    //     pipelineState.vertexDeclaration = mesh.vertexDeclaration;
+//    //     pipelineState.cullMode = RenderCullMode::NONE;
+//    //     pipelineState.zFunc = RenderComparisonFunction::GREATER_EQUAL;
+//    //     pipelineState.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_STRIP;
+//    //     pipelineState.vertexStrides[0] = mesh.vertexSize;
+//    //     pipelineState.renderTargetFormat = RenderFormat::R8G8B8A8_UNORM;
+//    //     pipelineState.depthStencilFormat = RenderFormat::D32_FLOAT;
+//    //     pipelineState.specConstants = SPEC_CONSTANT_REVERSE_Z;
+//
+//    //     SanitizePipelineState(pipelineState);
+//    //     EnqueueGraphicsPipelineCompilation(pipelineState, args.tokenPair, "FxVelocityMap");
+//
+//    //     if (args.velocityMapQuickStep)
+//    //     {
+//    //         pipelineState.vertexShader = FindShaderCacheEntry(0x99DC3F27E402700D)->guestShader;
+//    //         SanitizePipelineState(pipelineState);
+//    //         EnqueueGraphicsPipelineCompilation(pipelineState, args.tokenPair, "FxVelocityMapQuickStep");
+//    //     }
+//    // }
+//
+//    uint32_t defaultStr = args.instancing ? 0x820C8734 : 0x8202DDBC; // "instancing" for instancing, "default" for regular
+//    guest_stack_var<Hedgehog::Base::CStringSymbol> defaultSymbol(reinterpret_cast<const char*>(g_memory.Translate(defaultStr)));
+//    auto defaultFindResult = shaderList->m_PixelShaderPermutations.find(*defaultSymbol);
+//    if (defaultFindResult == shaderList->m_PixelShaderPermutations.end())
+//        return;
+//
+//    uint32_t pixelShaderSubPermutationsToCompile = 0;
+//    if (constTexCoord) pixelShaderSubPermutationsToCompile |= 0x1;
+//    if (args.noGI) pixelShaderSubPermutationsToCompile |= 0x2;
+//
+//    if ((defaultFindResult->second.m_SubPermutations.get() & (1 << pixelShaderSubPermutationsToCompile)) == 0) pixelShaderSubPermutationsToCompile &= ~0x1;
+//    if ((defaultFindResult->second.m_SubPermutations.get() & (1 << pixelShaderSubPermutationsToCompile)) == 0) pixelShaderSubPermutationsToCompile &= ~0x2;
+//
+//    uint32_t noneStr = mesh.morphModel ? 0x820D72F0 : 0x8200D938; // "p" for morph, "none" for regular
+//    guest_stack_var<Hedgehog::Base::CStringSymbol> noneSymbol(reinterpret_cast<const char*>(g_memory.Translate(noneStr)));
+//    auto noneFindResult = defaultFindResult->second.m_VertexShaderPermutations.find(*noneSymbol);
+//    if (noneFindResult == defaultFindResult->second.m_VertexShaderPermutations.end())
+//        return;
+//
+//    uint32_t vertexShaderSubPermutationsToCompile = 0;
+//    if (constTexCoord) vertexShaderSubPermutationsToCompile |= 0x1;
+//
+//    if ((noneFindResult->second->m_SubPermutations.get() & (1 << vertexShaderSubPermutationsToCompile)) == 0)
+//        vertexShaderSubPermutationsToCompile &= ~0x1;
+//
+//    auto vertexDeclaration = mesh.vertexDeclaration;
+//    bool instancing = args.instancing || isFur;
+//
+//    if (instancing)
+//    {
+//        GuestVertexElement vertexElements[64];
+//        memcpy(vertexElements, mesh.vertexDeclaration->vertexElements.get(), (mesh.vertexDeclaration->vertexElementCount - 1) * sizeof(GuestVertexElement));
+//
+//        if (args.instancing)
+//        {
+//            vertexElements[mesh.vertexDeclaration->vertexElementCount - 1] = { 1, 0, 0x2A23B9, 0, 5, 4 };
+//            vertexElements[mesh.vertexDeclaration->vertexElementCount] = { 1, 12, 0x2C2159, 0, 5, 5 };
+//            vertexElements[mesh.vertexDeclaration->vertexElementCount + 1] = { 1, 16, 0x2C2159, 0, 5, 6 };
+//            vertexElements[mesh.vertexDeclaration->vertexElementCount + 2] = { 1, 20, 0x182886, 0, 10, 1 };
+//            vertexElements[mesh.vertexDeclaration->vertexElementCount + 3] = { 2, 0, 0x2C82A1, 0, 0, 1 };
+//            vertexElements[mesh.vertexDeclaration->vertexElementCount + 4] = D3DDECL_END();
+//        }
+//        else if (isFur)
+//        {
+//            vertexElements[mesh.vertexDeclaration->vertexElementCount - 1] = { 1, 0, 0x2C82A1, 0, 0, 1 };
+//            vertexElements[mesh.vertexDeclaration->vertexElementCount] = { 2, 0, 0x2C83A4, 0, 0, 2 };
+//            vertexElements[mesh.vertexDeclaration->vertexElementCount + 1] = D3DDECL_END();
+//        }
+//
+//        vertexDeclaration = CreateVertexDeclarationWithoutAddRef(vertexElements);
+//    }
+//
+//    for (auto& [pixelShaderSubPermutations, pixelShader] : defaultFindResult->second.m_PixelShaders)
+//    {
+//        if (pixelShader.get() == nullptr || (pixelShaderSubPermutations & 0x3) != pixelShaderSubPermutationsToCompile)
+//            continue;
+//
+//        for (auto& [vertexShaderSubPermutations, vertexShader] : noneFindResult->second->m_VertexShaders)
+//        {
+//            if (vertexShader.get() == nullptr || (vertexShaderSubPermutations & 0x1) != vertexShaderSubPermutationsToCompile)
+//                continue;
+//
+//            PipelineState pipelineState{};
+//            pipelineState.vertexShader = reinterpret_cast<GuestShader*>(vertexShader->m_spCode->m_pD3DVertexShader.get());
+//            pipelineState.pixelShader = reinterpret_cast<GuestShader*>(pixelShader->m_spCode->m_pD3DPixelShader.get());
+//            pipelineState.vertexDeclaration = vertexDeclaration;
+//            pipelineState.instancing = instancing;
+//            pipelineState.zWriteEnable = !isSky && mesh.layer != MeshLayer::Transparent;
+//            pipelineState.srcBlend = RenderBlend::SRC_ALPHA;
+//            pipelineState.destBlend = mesh.material->m_Additive ? RenderBlend::ONE : RenderBlend::INV_SRC_ALPHA;
+//            pipelineState.cullMode = mesh.material->m_DoubleSided ? RenderCullMode::NONE : RenderCullMode::BACK;
+//            pipelineState.zFunc = RenderComparisonFunction::GREATER_EQUAL; // Reverse Z
+//            pipelineState.alphaBlendEnable = mesh.layer == MeshLayer::Transparent || mesh.layer == MeshLayer::Special;
+//            pipelineState.srcBlendAlpha = RenderBlend::SRC_ALPHA;
+//            pipelineState.destBlendAlpha = RenderBlend::INV_SRC_ALPHA;
+//            pipelineState.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_STRIP;
+//            pipelineState.vertexStrides[0] = mesh.vertexSize;
+//
+//            if (args.instancing)
+//            {
+//                pipelineState.vertexStrides[1] = 24;
+//                pipelineState.vertexStrides[2] = 4;
+//            }
+//            else if (isFur)
+//            {
+//                pipelineState.vertexStrides[1] = 4;
+//                pipelineState.vertexStrides[2] = 4;
+//            }
+//
+//            pipelineState.renderTargetFormat = RenderFormat::R16G16B16A16_FLOAT;
+//            pipelineState.depthStencilFormat = RenderFormat::D32_FLOAT_S8_UINT;
+//            pipelineState.sampleCount = Config::AntiAliasing != EAntiAliasing::None ? int32_t(Config::AntiAliasing.Value) : 1;
+//
+//            if (pipelineState.vertexDeclaration->hasR11G11B10Normal)
+//                pipelineState.specConstants |= SPEC_CONSTANT_R11G11B10_NORMAL;
+//
+//            if (Config::GITextureFiltering == EGITextureFiltering::Bicubic)
+//                pipelineState.specConstants |= SPEC_CONSTANT_BICUBIC_GI_FILTER;
+//
+//            if (mesh.layer == MeshLayer::PunchThrough)
+//            {
+//                if (Config::AntiAliasing != EAntiAliasing::None && Config::TransparencyAntiAliasing)
+//                {
+//                    pipelineState.enableAlphaToCoverage = true;
+//                    pipelineState.specConstants |= SPEC_CONSTANT_ALPHA_TO_COVERAGE;
+//                }
+//                else
+//                {
+//                    pipelineState.specConstants |= SPEC_CONSTANT_ALPHA_TEST;
+//                }
+//            }
+//
+//            if (!isSky)
+//                pipelineState.specConstants |= SPEC_CONSTANT_REVERSE_Z;
+//
+//            auto createGraphicsPipeline = [&](PipelineState& pipelineStateToCreate)
+//                {
+//                    SanitizePipelineState(pipelineStateToCreate);
+//                    EnqueueGraphicsPipelineCompilation(pipelineStateToCreate, args.tokenPair, shaderList->m_TypeAndName.c_str() + 3);
+//
+//                    // Morph models have 4 targets where unused targets default to the first vertex stream.
+//                    if (mesh.morphModel)
+//                    {
+//                        for (size_t i = 0; i < 5; i++)
+//                        {
+//                            for (size_t j = 0; j < 4; j++)
+//                                pipelineStateToCreate.vertexStrides[j + 1] = i > j ? mesh.morphTargetVertexSize : mesh.vertexSize;
+//
+//                            SanitizePipelineState(pipelineStateToCreate);
+//                            EnqueueGraphicsPipelineCompilation(pipelineStateToCreate, args.tokenPair, shaderList->m_TypeAndName.c_str() + 3);
+//                        }
+//                    }
+//                };
+//
+//            createGraphicsPipeline(pipelineState);
+//
+//            // We cannot rely on this being accurate during loading as SceneEffect.prm.xml gets loaded a bit later.
+//            bool planarReflectionEnabled = *reinterpret_cast<bool*>(g_memory.Translate(0x832FA0D8));
+//            bool loading = *SWA::SGlobals::ms_IsLoading;
+//            bool compileNoMsaaPipeline = pipelineState.sampleCount != 1 && (loading || planarReflectionEnabled);
+//
+//            auto noMsaaPipeline = pipelineState;
+//            noMsaaPipeline.sampleCount = 1;
+//            noMsaaPipeline.enableAlphaToCoverage = false;
+//
+//            if ((noMsaaPipeline.specConstants & SPEC_CONSTANT_ALPHA_TO_COVERAGE) != 0)
+//            {
+//                noMsaaPipeline.specConstants &= ~SPEC_CONSTANT_ALPHA_TO_COVERAGE;
+//                noMsaaPipeline.specConstants |= SPEC_CONSTANT_ALPHA_TEST;
+//            }
+//
+//            if (compileNoMsaaPipeline)
+//            {
+//                // Planar reflections don't use MSAA.
+//                createGraphicsPipeline(noMsaaPipeline);
+//            }
+//
+//            if (args.objectIcon)
+//            {
+//                // Object icons get rendered to a SDR buffer without MSAA.
+//                auto iconPipelineState = noMsaaPipeline;
+//                iconPipelineState.renderTargetFormat = RenderFormat::R8G8B8A8_UNORM;
+//                createGraphicsPipeline(iconPipelineState);
+//            }
+//
+//            if (isSonicMouth)
+//            {
+//                // Sonic's mouth switches between "SonicSkin_dspf[b]" or "SonicSkinNodeInvX_dspf[b]" depending on the view angle.
+//                auto mouthPipelineState = pipelineState;
+//                mouthPipelineState.vertexShader = FindShaderCacheEntry(0x689AA3140AB9EBAA)->guestShader;
+//                createGraphicsPipeline(mouthPipelineState);
+//
+//                if (compileNoMsaaPipeline)
+//                {
+//                    auto noMsaaMouthPipelineState = noMsaaPipeline;
+//                    noMsaaMouthPipelineState.vertexShader = mouthPipelineState.vertexShader;
+//                    createGraphicsPipeline(noMsaaMouthPipelineState);
+//                }
+//            }
+//        }
+//    }
+//}
 
-#ifdef PSO_CACHING
-    if (!isPrecompiledPipeline)
-    {
-        std::lock_guard lock(g_pipelineCacheMutex);
-        g_pipelineStatesToCache.erase(hash);
-    }
-#endif
-}
+//static void CompileMeshPipeline(Hedgehog::Mirage::CMeshData* mesh, MeshLayer layer, CompilationArgs& args)
+//{
+//    CompileMeshPipeline(Mesh
+//        {
+//            mesh->m_VertexSize,
+//            0,
+//            reinterpret_cast<GuestVertexDeclaration*>(mesh->m_VertexDeclarationPtr.m_pD3DVertexDeclaration.get()),
+//            mesh->m_spMaterial.get(),
+//            layer,
+//            false
+//        }, args);
+//}
+
+//static void CompileMeshPipeline(Hedgehog::Mirage::CMorphModelData* morphModel, Hedgehog::Mirage::CMeshIndexData* mesh, MeshLayer layer, CompilationArgs& args)
+//{
+//    CompileMeshPipeline(Mesh
+//        {
+//            morphModel->m_VertexSize,
+//            morphModel->m_MorphTargetVertexSize,
+//            reinterpret_cast<GuestVertexDeclaration*>(morphModel->m_VertexDeclarationPtr.m_pD3DVertexDeclaration.get()),
+//            mesh->m_spMaterial.get(),
+//            layer,
+//            true
+//        }, args);
+//}
+
+//template<typename T>
+//static void CompileMeshPipelines(const T& modelData, CompilationArgs& args)
+//{
+//    for (auto& meshGroup : modelData.m_NodeGroupModels)
+//    {
+//        for (auto& mesh : meshGroup->m_OpaqueMeshes)
+//        {
+//            CompileMeshPipeline(mesh.get(), MeshLayer::Opaque, args);
+//
+//            if (args.noGI) // For models that can be shown transparent (eg. medals)
+//                CompileMeshPipeline(mesh.get(), MeshLayer::Transparent, args);
+//        }
+//
+//        for (auto& mesh : meshGroup->m_TransparentMeshes)
+//            CompileMeshPipeline(mesh.get(), MeshLayer::Transparent, args);
+//
+//        for (auto& mesh : meshGroup->m_PunchThroughMeshes)
+//            CompileMeshPipeline(mesh.get(), MeshLayer::PunchThrough, args);
+//
+//        for (auto& specialMeshGroup : meshGroup->m_SpecialMeshGroups)
+//        {
+//            for (auto& mesh : specialMeshGroup)
+//                CompileMeshPipeline(mesh.get(), MeshLayer::Special, args); // TODO: Are there layer types other than water in this game??
+//        }
+//    }
+//
+//    for (auto& mesh : modelData.m_OpaqueMeshes)
+//    {
+//        CompileMeshPipeline(mesh.get(), MeshLayer::Opaque, args);
+//
+//        if (args.noGI)
+//            CompileMeshPipeline(mesh.get(), MeshLayer::Transparent, args);
+//    }
+//
+//    for (auto& mesh : modelData.m_TransparentMeshes)
+//        CompileMeshPipeline(mesh.get(), MeshLayer::Transparent, args);
+//
+//    for (auto& mesh : modelData.m_PunchThroughMeshes)
+//        CompileMeshPipeline(mesh.get(), MeshLayer::PunchThrough, args);
+//
+//    if constexpr (std::is_same_v<T, Hedgehog::Mirage::CModelData>)
+//    {
+//        for (auto& morphModel : modelData.m_MorphModels)
+//        {
+//            for (auto& mesh : morphModel->m_OpaqueMeshList)
+//                CompileMeshPipeline(morphModel.get(), mesh.get(), MeshLayer::Opaque, args);
+//
+//            for (auto& mesh : morphModel->m_TransparentMeshList)
+//                CompileMeshPipeline(morphModel.get(), mesh.get(), MeshLayer::Transparent, args);
+//
+//            for (auto& mesh : morphModel->m_PunchThroughMeshList)
+//                CompileMeshPipeline(morphModel.get(), mesh.get(), MeshLayer::PunchThrough, args);
+//        }
+//    }
+//}
+
+//static void CompileParticleMaterialPipeline(const Hedgehog::Sparkle::CParticleMaterial& material, PipelineTaskTokenPair& tokenPair)
+//{
+//    auto& shaderList = material.m_spShaderListData;
+//    if (shaderList.get() == nullptr)
+//        return;
+//
+//    guest_stack_var<Hedgehog::Base::CStringSymbol> defaultSymbol(reinterpret_cast<const char*>(g_memory.Translate(0x8202DDBC)));
+//    auto defaultFindResult = shaderList->m_PixelShaderPermutations.find(*defaultSymbol);
+//    if (defaultFindResult == shaderList->m_PixelShaderPermutations.end())
+//        return;
+//
+//    guest_stack_var<Hedgehog::Base::CStringSymbol> noneSymbol(reinterpret_cast<const char*>(g_memory.Translate(0x8200D938)));
+//    auto noneFindResult = defaultFindResult->second.m_VertexShaderPermutations.find(*noneSymbol);
+//    if (noneFindResult == defaultFindResult->second.m_VertexShaderPermutations.end())
+//        return;
+//
+//    // All the particle models in the game come with the unoptimized format, so we can assume it.
+//    uint8_t unoptimizedVertexElements[144] =
+//    {
+//        0x00, 0x00, 0x00, 0x00, 0x00, 0x2A, 0x23, 0xB9, 0x00, 0x00, 0x00, 0x00,
+//        0x00, 0x00, 0x00, 0x0C, 0x00, 0x2A, 0x23, 0xB9, 0x00, 0x03, 0x00, 0x00,
+//        0x00, 0x00, 0x00, 0x18, 0x00, 0x2A, 0x23, 0xB9, 0x00, 0x06, 0x00, 0x00,
+//        0x00, 0x00, 0x00, 0x24, 0x00, 0x2A, 0x23, 0xB9, 0x00, 0x07, 0x00, 0x00,
+//        0x00, 0x00, 0x00, 0x30, 0x00, 0x2C, 0x23, 0xA5, 0x00, 0x05, 0x00, 0x00,
+//        0x00, 0x00, 0x00, 0x38, 0x00, 0x2C, 0x23, 0xA5, 0x00, 0x05, 0x01, 0x00,
+//        0x00, 0x00, 0x00, 0x40, 0x00, 0x2C, 0x23, 0xA5, 0x00, 0x05, 0x02, 0x00,
+//        0x00, 0x00, 0x00, 0x48, 0x00, 0x2C, 0x23, 0xA5, 0x00, 0x05, 0x03, 0x00,
+//        0x00, 0x00, 0x00, 0x50, 0x00, 0x1A, 0x23, 0xA6, 0x00, 0x0A, 0x00, 0x00,
+//        0x00, 0x00, 0x00, 0x60, 0x00, 0x1A, 0x23, 0x86, 0x00, 0x02, 0x00, 0x00,
+//        0x00, 0x00, 0x00, 0x64, 0x00, 0x1A, 0x20, 0x86, 0x00, 0x01, 0x00, 0x00,
+//        0x00, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00
+//    };
+//
+//    auto unoptimizedVertexDeclaration = CreateVertexDeclarationWithoutAddRef(reinterpret_cast<GuestVertexElement*>(unoptimizedVertexElements));
+//    auto sparkleVertexDeclaration = CreateVertexDeclarationWithoutAddRef(reinterpret_cast<GuestVertexElement*>(g_memory.Translate(0x8211F540)));
+//
+//    bool isMeshShader = strstr(shaderList->m_TypeAndName.c_str(), "Mesh") != nullptr;
+//
+//    PipelineState pipelineState{};
+//    pipelineState.vertexShader = reinterpret_cast<GuestShader*>(noneFindResult->second->m_VertexShaders.begin()->second->m_spCode->m_pD3DVertexShader.get());
+//    pipelineState.pixelShader = reinterpret_cast<GuestShader*>(defaultFindResult->second.m_PixelShaders.begin()->second->m_spCode->m_pD3DPixelShader.get());
+//    pipelineState.vertexDeclaration = isMeshShader ? unoptimizedVertexDeclaration : sparkleVertexDeclaration;
+//    pipelineState.zWriteEnable = false;
+//    pipelineState.zFunc = RenderComparisonFunction::GREATER_EQUAL;
+//    pipelineState.alphaBlendEnable = true;
+//    pipelineState.srcBlendAlpha = RenderBlend::SRC_ALPHA;
+//    pipelineState.destBlendAlpha = RenderBlend::INV_SRC_ALPHA;
+//    pipelineState.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_STRIP;
+//    pipelineState.vertexStrides[0] = isMeshShader ? 104 : 28;
+//    pipelineState.depthStencilFormat = RenderFormat::D32_FLOAT_S8_UINT;
+//    pipelineState.specConstants = SPEC_CONSTANT_REVERSE_Z;
+//
+//    if (pipelineState.vertexDeclaration->hasR11G11B10Normal)
+//        pipelineState.specConstants |= SPEC_CONSTANT_R11G11B10_NORMAL;
+//
+//    switch (material.m_BlendMode.get())
+//    {
+//    case Hedgehog::Sparkle::CParticleMaterial::eBlendMode_Zero:
+//        pipelineState.srcBlend = RenderBlend::ZERO;
+//        pipelineState.destBlend = RenderBlend::ZERO;
+//        break;
+//    case Hedgehog::Sparkle::CParticleMaterial::eBlendMode_Typical:
+//        pipelineState.srcBlend = RenderBlend::SRC_ALPHA;
+//        pipelineState.destBlend = RenderBlend::INV_SRC_ALPHA;
+//        break;
+//    case Hedgehog::Sparkle::CParticleMaterial::eBlendMode_Add:
+//        pipelineState.srcBlend = RenderBlend::SRC_ALPHA;
+//        pipelineState.destBlend = RenderBlend::ONE;
+//        break;
+//    default:
+//        pipelineState.srcBlend = RenderBlend::ONE;
+//        pipelineState.destBlend = RenderBlend::ONE;
+//        break;
+//    }
+//
+//    auto createGraphicsPipeline = [&](PipelineState& pipelineStateToCreate)
+//        {
+//            SanitizePipelineState(pipelineStateToCreate);
+//            EnqueueGraphicsPipelineCompilation(pipelineStateToCreate, tokenPair, shaderList->m_TypeAndName.c_str() + 3);
+//        };
+//
+//    // Mesh particles can use both cull modes. Quad particles are only NONE.
+//    RenderCullMode cullModes[] = { RenderCullMode::NONE, RenderCullMode::BACK };
+//    uint32_t cullModeCount = isMeshShader ? std::size(cullModes) : 1;
+//    RenderFormat renderTargetFormats[] = { RenderFormat::R16G16B16A16_FLOAT, RenderFormat::R8G8B8A8_UNORM };
+//
+//    for (size_t i = 0; i < cullModeCount; i++)
+//    {
+//        pipelineState.cullMode = cullModes[i];
+//
+//        for (auto renderTargetFormat : renderTargetFormats)
+//        {
+//            pipelineState.renderTargetFormat = renderTargetFormat;
+//
+//            if (renderTargetFormat == RenderFormat::R16G16B16A16_FLOAT)
+//                pipelineState.sampleCount = Config::AntiAliasing != EAntiAliasing::None ? int32_t(Config::AntiAliasing.Value) : 1;
+//            else
+//                pipelineState.sampleCount = 1;
+//
+//            createGraphicsPipeline(pipelineState);
+//
+//            // Always compile no MSAA variant for particles, as the planar
+//            // reflection variable isn't reliable at this time of compilation.
+//            bool compileNoMsaaPipeline = pipelineState.sampleCount != 1;
+//
+//            auto noMsaaPipelineState = pipelineState;
+//            noMsaaPipelineState.sampleCount = 1;
+//
+//            if (compileNoMsaaPipeline)
+//                createGraphicsPipeline(noMsaaPipelineState);
+//
+//            if (!isMeshShader)
+//            {
+//                // Previous compilation was for locus particles. This one will be for quads.
+//                auto quadPipelineState = pipelineState;
+//                quadPipelineState.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_LIST;
+//                createGraphicsPipeline(quadPipelineState);
+//
+//                if (compileNoMsaaPipeline)
+//                {
+//                    auto noMsaaQuadPipelineState = noMsaaPipelineState;
+//                    noMsaaQuadPipelineState.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_LIST;
+//                    createGraphicsPipeline(noMsaaQuadPipelineState);
+//                }
+//            }
+//        }
+//    }
+//}
+
+static std::thread::id g_mainThreadId = std::this_thread::get_id();
+
+// SWA::CGameModeStage::ExitLoading
+// PPC_FUNC_IMPL(__imp__sub_825369A0);
+// PPC_FUNC(sub_825369A0)
+// {
+//     assert(std::this_thread::get_id() == g_mainThreadId);
+//
+//     // Wait for pipeline compilations to finish.
+//     uint32_t value;
+//     while ((value = g_compilingPipelineTaskCount.load()) != 0)
+//     {
+//         // Pump SDL events to prevent the OS
+//         // from thinking the process is unresponsive.
+//         SDL_PumpEvents();
+//         SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+//
+//         g_compilingPipelineTaskCount.wait(value);
+//     }
+//
+//     __imp__sub_825369A0(ctx, base);
+// }
+
+// CModelData::CheckMadeAll
+// PPC_FUNC_IMPL(__imp__sub_82E2EFB0);
+// PPC_FUNC(sub_82E2EFB0)
+// {   
+//     if (reinterpret_cast<Hedgehog::Database::CDatabaseData*>(base + ctx.r3.u32)->m_Flags & eDatabaseDataFlags_CompilingPipelines)
+//     {
+//         ctx.r3.u64 = 0;
+//     }
+//     else
+//     {
+//         __imp__sub_82E2EFB0(ctx, base);
+//     }
+// }
+
+// CTerrainModelData::CheckMadeAll
+// PPC_FUNC_IMPL(__imp__sub_82E243D8);
+// PPC_FUNC(sub_82E243D8)
+// {   
+//     if (reinterpret_cast<Hedgehog::Database::CDatabaseData*>(base + ctx.r3.u32)->m_Flags & eDatabaseDataFlags_CompilingPipelines)
+//     {
+//         ctx.r3.u64 = 0;
+//     }
+//     else
+//     {
+//         __imp__sub_82E243D8(ctx, base);
+//     }
+// }
+
+// CParticleMaterial::CheckMadeAll
+// PPC_FUNC_IMPL(__imp__sub_82E87598);
+// PPC_FUNC(sub_82E87598)
+// {   
+//     if (reinterpret_cast<Hedgehog::Database::CDatabaseData*>(base + ctx.r3.u32)->m_Flags & eDatabaseDataFlags_CompilingPipelines)
+//     {
+//         ctx.r3.u64 = 0;
+//     }
+//     else
+//     {
+//         __imp__sub_82E87598(ctx, base);
+//     }
+// }
+
+//void GetDatabaseDataMidAsmHook(PPCRegister& r1, PPCRegister& r4)
+//{
+//    auto& databaseData = *reinterpret_cast<boost::shared_ptr<Hedgehog::Database::CDatabaseData>*>(
+//        g_memory.Translate(r1.u32 + 0x58));
+//
+//    if (!databaseData->IsMadeOne() && r4.u32 != NULL)
+//    {
+//        if (databaseData->m_pVftable.ptr == MODEL_DATA_VFTABLE)
+//        {
+//            // Ignore particle models, the materials they point at don't actually
+//            // get used and give the threads unnecessary work.
+//            bool isParticleModel = *reinterpret_cast<be<uint32_t>*>(g_memory.Translate(r4.u32 + 4)) != 5 &&
+//                strncmp(databaseData->m_TypeAndName.c_str() + 2, "eff_", 4) == 0;
+//
+//            if (isParticleModel)
+//                return;
+//
+//            // Adabat water is broken in original game, which they tried to fix by partially including the files in the update,
+//            // which then finally fixed for real in the DLC. This confuses the async PSO compiler and causes a hang if the DLC is missing.
+//            // We'll just ignore it.
+//            bool isAdabatWater = strcmp(databaseData->m_TypeAndName.c_str() + 2, "evl_sea_obj_st_waterCircle") == 0;
+//            if (isAdabatWater)
+//                return;
+//        }
+//
+//        databaseData->m_Flags |= eDatabaseDataFlags_CompilingPipelines;
+//        EnqueuePipelineTask(PipelineTaskType::DatabaseData, databaseData);
+//    }
+//}
+
+//static bool CheckMadeAll(Hedgehog::Mirage::CMeshData* meshData)
+//{
+//    if (!meshData->IsMadeOne())
+//        return false;
+//
+//    if (meshData->m_spMaterial.get() != nullptr)
+//    {
+//        if (!meshData->m_spMaterial->IsMadeOne())
+//            return false;
+//
+//        if (meshData->m_spMaterial->m_spTexsetData.get() != nullptr)
+//        {
+//            if (!meshData->m_spMaterial->m_spTexsetData->IsMadeOne())
+//                return false;
+//
+//            for (auto& texture : meshData->m_spMaterial->m_spTexsetData->m_TextureList)
+//            {
+//                if (!texture->IsMadeOne())
+//                    return false;
+//            }
+//        }
+//    }
+//
+//    return true;
+//}
 
 template<typename T>
 static bool CheckMadeAll(const T& modelData)
@@ -7308,162 +8641,285 @@ static bool CheckMadeAll(const T& modelData)
     return true;
 }
 
-static void PipelineTaskConsumerThread()
-{
-    os::thread::SetCurrentThreadName("Pipeline Task Consumer Thread");
+//static void PipelineTaskConsumerThread()
+//{
+//#ifdef _WIN32
+//    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_IDLE);
+//    GuestThread::SetThreadName(GetCurrentThreadId(), "Pipeline Task Consumer Thread");
+//#endif
+//
+//    std::vector<PipelineTask> localPipelineTaskQueue;
+//    std::unique_ptr<GuestThreadContext> ctx;
+//
+//    while (true)
+//    {
+//        // Wait for tasks to arrive.
+//        uint32_t pendingPipelineTaskCount;
+//        while ((pendingPipelineTaskCount = g_pendingPipelineTaskCount.load()) == 0)
+//            g_pendingPipelineTaskCount.wait(pendingPipelineTaskCount);
+//
+//        if (ctx == nullptr)
+//            ctx = std::make_unique<GuestThreadContext>(0);
+//
+//        {
+//            std::lock_guard lock(g_pipelineTaskMutex);
+//            localPipelineTaskQueue.insert(localPipelineTaskQueue.end(), g_pipelineTaskQueue.begin(), g_pipelineTaskQueue.end());
+//            g_pipelineTaskQueue.clear();
+//        }
+//
+//        bool allHandled = true;
+//
+//        for (auto& [type, databaseData] : localPipelineTaskQueue)
+//        {
+//            switch (type)
+//            {
+//            case PipelineTaskType::DatabaseData:
+//            {
+//                bool ready = false;
+//
+//                if (databaseData->m_pVftable.ptr == MODEL_DATA_VFTABLE)
+//                    ready = CheckMadeAll(*reinterpret_cast<Hedgehog::Mirage::CModelData*>(databaseData.get()));
+//                else
+//                    ready = databaseData->IsMadeOne();
+//
+//                if (ready || databaseData.unique())
+//                {
+//                    if (databaseData->m_pVftable.ptr == TERRAIN_MODEL_DATA_VFTABLE)
+//                    {
+//                        CompilationArgs args{};
+//                        args.tokenPair.token.type = type;
+//                        args.tokenPair.token.databaseData = databaseData;
+//                        args.instancing = strncmp(databaseData->m_TypeAndName.c_str() + 3, "ins", 3) == 0;
+//                        CompileMeshPipelines(*reinterpret_cast<Hedgehog::Mirage::CTerrainModelData*>(databaseData.get()), args);
+//                    }
+//                    else if (databaseData->m_pVftable.ptr == PARTICLE_MATERIAL_VFTABLE)
+//                    {
+//                        PipelineTaskTokenPair tokenPair;
+//                        tokenPair.token.type = type;
+//                        tokenPair.token.databaseData = databaseData;
+//                        CompileParticleMaterialPipeline(*reinterpret_cast<Hedgehog::Sparkle::CParticleMaterial*>(databaseData.get()), tokenPair);
+//                    }
+//                    else
+//                    {
+//                        assert(databaseData->m_pVftable.ptr == MODEL_DATA_VFTABLE);
+//
+//                        auto modelData = reinterpret_cast<Hedgehog::Mirage::CModelData*>(databaseData.get());
+//
+//                        CompilationArgs args{};
+//                        args.tokenPair.token.type = type;
+//                        args.tokenPair.token.databaseData = databaseData;
+//                        args.noGI = true;
+//                        args.hasMoreThanOneBone = modelData->m_NodeNum > 1;
+//                        args.velocityMapQuickStep = strcmp(databaseData->m_TypeAndName.c_str() + 2, "SonicRoot") == 0;
+//
+//                        // Check for the on screen items, eg. rings going to HUD.
+//                        auto items = reinterpret_cast<xpointer<const char>*>(g_memory.Translate(0x832A8DD0));
+//                        for (size_t i = 0; i < 50; i++)
+//                        {
+//                            if (strcmp(databaseData->m_TypeAndName.c_str() + 2, (*items).get()) == 0)
+//                            {
+//                                args.objectIcon = true;
+//                                break;
+//                            }
+//                            items += 7;
+//                        }
+//
+//                        CompileMeshPipelines(*modelData, args);
+//                    }
+//
+//                    type = PipelineTaskType::Null;
+//                    databaseData = nullptr;
+//
+//                    --g_pendingPipelineTaskCount;
+//                }
+//                else
+//                {
+//                    allHandled = false;
+//                }
+//
+//                break;
+//            }
+//
+//            case PipelineTaskType::PrecompilePipelines:
+//            {
+//                // Deliberately leaving the type null to account for the enqueue
+//                // call not incrementing the compiling pipeline task counter.
+//                PipelineTaskTokenPair tokenPair;
+//
+//                for (auto vertexElements : g_vertexDeclarationCache)
+//                    CreateVertexDeclarationWithoutAddRef(reinterpret_cast<GuestVertexElement*>(vertexElements));
+//
+//                for (auto pipelineState : g_pipelineStateCache)
+//                {
+//                    // The hashes were reinterpret casted to pointers in the cache.
+//                    pipelineState.vertexShader = FindShaderCacheEntry(reinterpret_cast<XXH64_hash_t>(pipelineState.vertexShader))->guestShader;
+//
+//                    if (pipelineState.pixelShader != nullptr)
+//                        pipelineState.pixelShader = FindShaderCacheEntry(reinterpret_cast<XXH64_hash_t>(pipelineState.pixelShader))->guestShader;
+//
+//                    {
+//                        std::lock_guard lock(g_vertexDeclarationMutex);
+//                        pipelineState.vertexDeclaration = g_vertexDeclarations[reinterpret_cast<XXH64_hash_t>(pipelineState.vertexDeclaration)];
+//                    }
+//
+//                    if (!g_capabilities.triangleFan && pipelineState.primitiveTopology == RenderPrimitiveTopology::TRIANGLE_FAN)
+//                        pipelineState.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_LIST;
+//
+//                    // Zero out depth bias for Vulkan, we only store common values for D3D12.
+//                    if (g_capabilities.dynamicDepthBias && g_backend != Backend::D3D12)
+//                    {
+//                        pipelineState.depthBias = 0;
+//                        pipelineState.slopeScaledDepthBias = 0.0f;
+//                    }
+//
+//                    if (Config::GITextureFiltering == EGITextureFiltering::Bicubic)
+//                        pipelineState.specConstants |= SPEC_CONSTANT_BICUBIC_GI_FILTER;
+//
+//                    auto createGraphicsPipeline = [&](PipelineState& pipelineStateToCreate, const char* name)
+//                        {
+//                            SanitizePipelineState(pipelineStateToCreate);
+//                            EnqueueGraphicsPipelineCompilation(pipelineStateToCreate, tokenPair, name, true);
+//                        };
+//
+//                    // Compile both MSAA and non MSAA variants to work with reflection maps. The render formats are an assumption but it should hold true.
+//                    if (Config::AntiAliasing != EAntiAliasing::None &&
+//                        pipelineState.renderTargetFormat == RenderFormat::R16G16B16A16_FLOAT &&
+//                        pipelineState.depthStencilFormat == RenderFormat::D32_FLOAT_S8_UINT)
+//                    {
+//                        auto msaaPipelineState = pipelineState;
+//                        msaaPipelineState.sampleCount = int32_t(Config::AntiAliasing.Value);
+//
+//                        if (Config::TransparencyAntiAliasing && (msaaPipelineState.specConstants & SPEC_CONSTANT_ALPHA_TEST) != 0)
+//                        {
+//                            msaaPipelineState.enableAlphaToCoverage = true;
+//                            msaaPipelineState.specConstants &= ~SPEC_CONSTANT_ALPHA_TEST;
+//                            msaaPipelineState.specConstants |= SPEC_CONSTANT_ALPHA_TO_COVERAGE;
+//                        }
+//
+//                        createGraphicsPipeline(msaaPipelineState, "Precompiled Pipeline MSAA");
+//                    }
+//
+//                    if (pipelineState.pixelShader != nullptr &&
+//                        pipelineState.pixelShader->shaderCacheEntry != nullptr)
+//                    {
+//                        XXH64_hash_t hash = pipelineState.pixelShader->shaderCacheEntry->hash;
+//
+//                        // Compile the custom gaussian blur shaders that we pass to the game.
+//                        if (hash == 0x4294510C775F4EE8)
+//                        {
+//                            for (auto& shader : g_gaussianBlurShaders)
+//                            {
+//                                auto newPipelineState = pipelineState;
+//                                newPipelineState.pixelShader = shader.get();
+//                                createGraphicsPipeline(newPipelineState, "Precompiled Gaussian Blur Pipeline");
+//                            }
+//                        }
+//                        // Compile enhanced motion blur shader.
+//                        else if (hash == 0x6B9732B4CD7E7740)
+//                        {
+//                            auto newPipelineState = pipelineState;
+//                            newPipelineState.pixelShader = g_enhancedMotionBlurShader.get();
+//                            createGraphicsPipeline(newPipelineState, "Precompiled Enhanced Motion Blur Pipeline");
+//                        }
+//                    }
+//
+//                    createGraphicsPipeline(pipelineState, "Precompiled Pipeline");
+//
+//                    // Compile the CSD filter shader that we pass to the game when point filtering is used.
+//                    if (pipelineState.pixelShader == g_csdShader)
+//                    {
+//                        pipelineState.pixelShader = g_csdFilterShader.get();
+//                        createGraphicsPipeline(pipelineState, "Precompiled CSD Filter Pipeline");
+//                    }
+//                }
+//
+//                type = PipelineTaskType::Null;
+//                --g_pendingPipelineTaskCount;
+//
+//                break;
+//            }
+//
+//            case PipelineTaskType::RecompilePipelines:
+//            {
+//                PipelineTaskTokenPair tokenPair;
+//                tokenPair.token.type = type;
+//
+//                auto asyncPipelines = g_asyncPipelineStates.values();
+//
+//                for (auto& [hash, pipelineState] : asyncPipelines)
+//                {
+//                    bool alphaTest = (pipelineState.specConstants & (SPEC_CONSTANT_ALPHA_TEST | SPEC_CONSTANT_ALPHA_TO_COVERAGE)) != 0;
+//                    bool msaa = pipelineState.sampleCount != 1 || (pipelineState.renderTargetFormat == RenderFormat::R16G16B16A16_FLOAT && pipelineState.depthStencilFormat == RenderFormat::D32_FLOAT_S8_UINT);
+//
+//                    pipelineState.sampleCount = 1;
+//                    pipelineState.enableAlphaToCoverage = false;
+//                    pipelineState.specConstants &= ~(SPEC_CONSTANT_BICUBIC_GI_FILTER | SPEC_CONSTANT_ALPHA_TEST | SPEC_CONSTANT_ALPHA_TO_COVERAGE);
+//
+//                    if (msaa && Config::AntiAliasing != EAntiAliasing::None)
+//                    {
+//                        pipelineState.sampleCount = int32_t(Config::AntiAliasing.Value);
+//
+//                        if (alphaTest)
+//                        {
+//                            if (Config::TransparencyAntiAliasing)
+//                            {
+//                                pipelineState.enableAlphaToCoverage = true;
+//                                pipelineState.specConstants |= SPEC_CONSTANT_ALPHA_TO_COVERAGE;
+//                            }
+//                            else
+//                            {
+//                                pipelineState.specConstants |= SPEC_CONSTANT_ALPHA_TEST;
+//                            }
+//                        }
+//                    }
+//                    else if (alphaTest)
+//                    {
+//                        pipelineState.specConstants |= SPEC_CONSTANT_ALPHA_TEST;
+//                    }
+//
+//                    if (Config::GITextureFiltering == EGITextureFiltering::Bicubic)
+//                        pipelineState.specConstants |= SPEC_CONSTANT_BICUBIC_GI_FILTER;
+//
+//                    SanitizePipelineState(pipelineState);
+//                    EnqueueGraphicsPipelineCompilation(pipelineState, tokenPair, "Recompiled Pipeline State");
+//                }
+//
+//                type = PipelineTaskType::Null;
+//                --g_pendingPipelineTaskCount;
+//
+//                break;
+//            }
+//            }
+//        }
+//
+//        if (allHandled)
+//            localPipelineTaskQueue.clear();
+//
+//        std::this_thread::yield();
+//    }
+//}
 
-#ifdef _WIN32
-    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_IDLE);
+//static std::thread g_pipelineTaskConsumerThread(PipelineTaskConsumerThread);
+
+#ifdef ASYNC_PSO_DEBUG
+
+// PPC_FUNC_IMPL(__imp__sub_82E33330);
+// PPC_FUNC(sub_82E33330)
+// {
+//     auto vertexShaderCode = reinterpret_cast<Hedgehog::Mirage::CVertexShaderCodeData*>(g_memory.Translate(ctx.r4.u32));
+//     __imp__sub_82E33330(ctx, base);
+//     reinterpret_cast<GuestShader*>(vertexShaderCode->m_pD3DVertexShader.get())->name = vertexShaderCode->m_TypeAndName.c_str() + 3;
+// }
+
+// PPC_FUNC_IMPL(__imp__sub_82E328D8);
+// PPC_FUNC(sub_82E328D8)
+// {
+//     auto pixelShaderCode = reinterpret_cast<Hedgehog::Mirage::CPixelShaderCodeData*>(g_memory.Translate(ctx.r4.u32));
+//     __imp__sub_82E328D8(ctx, base);
+//     reinterpret_cast<GuestShader*>(pixelShaderCode->m_pD3DPixelShader.get())->name = pixelShaderCode->m_TypeAndName.c_str() + 2;
+// }
+
 #endif
-
-    std::vector<PipelineTask> localPipelineTaskQueue;
-    std::unique_ptr<GuestThreadContext> ctx;
-
-    while (true)
-    {
-        // Wait for tasks to arrive.
-        uint32_t pendingPipelineTaskCount;
-        while ((pendingPipelineTaskCount = g_pendingPipelineTaskCount.load()) == 0)
-            g_pendingPipelineTaskCount.wait(pendingPipelineTaskCount);
-
-        if (ctx == nullptr)
-            ctx = std::make_unique<GuestThreadContext>(0);
-
-        {
-            std::lock_guard lock(g_pipelineTaskMutex);
-            localPipelineTaskQueue.insert(localPipelineTaskQueue.end(), g_pipelineTaskQueue.begin(), g_pipelineTaskQueue.end());
-            g_pipelineTaskQueue.clear();
-        }
-
-        bool allHandled = true;
-
-        for (auto& [type] : localPipelineTaskQueue)
-        {
-            switch (type)
-            {
-            case PipelineTaskType::PrecompilePipelines:
-            {
-                // Deliberately leaving the type null to account for the enqueue
-                // call not incrementing the compiling pipeline task counter.
-                PipelineTaskTokenPair tokenPair;
-
-                for (auto vertexElements : g_vertexDeclarationCache)
-                    CreateVertexDeclarationWithoutAddRef(reinterpret_cast<GuestVertexElement*>(vertexElements));
-
-                for (auto pipelineState : g_pipelineStateCache)
-                {
-                    // The hashes were reinterpret casted to pointers in the cache.
-                    pipelineState.vertexShader = GetOrCreateShader(reinterpret_cast<XXH64_hash_t>(pipelineState.vertexShader), ResourceType::VertexShader);
-
-                    if (pipelineState.pixelShader != nullptr)
-                        pipelineState.pixelShader = GetOrCreateShader(reinterpret_cast<XXH64_hash_t>(pipelineState.pixelShader), ResourceType::PixelShader);
-
-                    {
-                        std::lock_guard lock(g_vertexDeclarationMutex);
-                        pipelineState.vertexDeclaration = g_vertexDeclarations[reinterpret_cast<XXH64_hash_t>(pipelineState.vertexDeclaration)];
-                    }
-
-                    if (!g_capabilities.triangleFan && pipelineState.primitiveTopology == RenderPrimitiveTopology::TRIANGLE_FAN)
-                        pipelineState.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_LIST;
-
-                    // Zero out depth bias for Vulkan, we only store common values for D3D12.
-                    if (g_capabilities.dynamicDepthBias && g_backend != Backend::D3D12)
-                    {
-                        pipelineState.depthBias = 0;
-                        pipelineState.slopeScaledDepthBias = 0.0f;
-                    }
-
-                    auto createGraphicsPipeline = [&](PipelineState& pipelineStateToCreate, const char* name)
-                        {
-                            SanitizePipelineState(pipelineStateToCreate);
-                            EnqueueGraphicsPipelineCompilation(pipelineStateToCreate, tokenPair, name, true);
-                        };
-
-                    // Compile both MSAA and non MSAA variants to work with reflection maps. The render formats are an assumption but it should hold true.
-                    if (Config::AntiAliasing != EAntiAliasing::Off &&
-                        pipelineState.renderTargetFormat == RenderFormat::R16G16B16A16_FLOAT &&
-                        pipelineState.depthStencilFormat == RenderFormat::D32_FLOAT_S8_UINT)
-                    {
-                        auto msaaPipelineState = pipelineState;
-                        msaaPipelineState.sampleCount = int32_t(Config::AntiAliasing.Value);
-
-                        if (Config::TransparencyAntiAliasing && (msaaPipelineState.specConstants & SPEC_CONSTANT_ALPHA_TEST) != 0)
-                        {
-                            msaaPipelineState.enableAlphaToCoverage = true;
-                            msaaPipelineState.specConstants &= ~SPEC_CONSTANT_ALPHA_TEST;
-                            msaaPipelineState.specConstants |= SPEC_CONSTANT_ALPHA_TO_COVERAGE;
-                        }
-
-                        createGraphicsPipeline(msaaPipelineState, "Precompiled Pipeline MSAA");
-                    }
-
-                    createGraphicsPipeline(pipelineState, "Precompiled Pipeline");
-                }
-
-                type = PipelineTaskType::Null;
-                --g_pendingPipelineTaskCount;
-
-                break;
-            }
-
-            case PipelineTaskType::RecompilePipelines:
-            {
-                PipelineTaskTokenPair tokenPair;
-                tokenPair.token.type = type;
-
-                auto asyncPipelines = g_asyncPipelineStates.values();
-
-                for (auto& [hash, pipelineState] : asyncPipelines)
-                {
-                    bool alphaTest = (pipelineState.specConstants & (SPEC_CONSTANT_ALPHA_TEST | SPEC_CONSTANT_ALPHA_TO_COVERAGE)) != 0;
-                    bool msaa = pipelineState.sampleCount != 1 || (pipelineState.renderTargetFormat == RenderFormat::R16G16B16A16_FLOAT && pipelineState.depthStencilFormat == RenderFormat::D32_FLOAT_S8_UINT);
-
-                    pipelineState.sampleCount = 1;
-                    pipelineState.enableAlphaToCoverage = false;
-                    pipelineState.specConstants &= ~(SPEC_CONSTANT_ALPHA_TEST | SPEC_CONSTANT_ALPHA_TO_COVERAGE);
-
-                    if (msaa && Config::AntiAliasing != EAntiAliasing::Off)
-                    {
-                        pipelineState.sampleCount = int32_t(Config::AntiAliasing.Value);
-
-                        if (alphaTest)
-                        {
-                            if (Config::TransparencyAntiAliasing)
-                            {
-                                pipelineState.enableAlphaToCoverage = true;
-                                pipelineState.specConstants |= SPEC_CONSTANT_ALPHA_TO_COVERAGE;
-                            }
-                            else
-                            {
-                                pipelineState.specConstants |= SPEC_CONSTANT_ALPHA_TEST;
-                            }
-                        }
-                    }
-                    else if (alphaTest)
-                    {
-                        pipelineState.specConstants |= SPEC_CONSTANT_ALPHA_TEST;
-                    }
-
-                    SanitizePipelineState(pipelineState);
-                    EnqueueGraphicsPipelineCompilation(pipelineState, tokenPair, "Recompiled Pipeline State");
-                }
-
-                type = PipelineTaskType::Null;
-                --g_pendingPipelineTaskCount;
-
-                break;
-            }
-            }
-        }
-
-        if (allHandled)
-            localPipelineTaskQueue.clear();
-
-        std::this_thread::yield();
-    }
-}
-
-static std::thread g_pipelineTaskConsumerThread(PipelineTaskConsumerThread);
 
 #ifdef PSO_CACHING
 class SDLEventListenerForPSOCaching : public SDLEventListener
@@ -7471,15 +8927,14 @@ class SDLEventListenerForPSOCaching : public SDLEventListener
 public:
     bool OnSDLEvent(SDL_Event* event) override 
     {
-        if (event->type != SDL_EVENT_QUIT)
+        if (event->type != SDL_QUIT)
             return false;
 
         std::lock_guard lock(g_pipelineCacheMutex);
         if (g_pipelineStatesToCache.empty())
             return false;
 
-        std::string path = (GetUserPath() / "pso_caching.txt").string();
-        FILE* f = fopen(path.c_str(), "ab");
+        FILE* f = fopen("send_this_file_to_skyth.txt", "ab");
         if (f != nullptr)
         {
             ankerl::unordered_dense::set<GuestVertexDeclaration*> vertexDeclarations;
@@ -7638,16 +9093,196 @@ void VideoConfigValueChangedCallback(IConfigDef* config)
 
     if (Video::s_needsResize)
         Video::ComputeViewportDimensions();
-
+        
     // Config options that require pipeline recompilation
     bool shouldRecompile =
         config == &Config::AntiAliasing ||
-        config == &Config::TransparencyAntiAliasing ||
-        config == &Config::RadialBlur;
+        config == &Config::TransparencyAntiAliasing;
 
-    if (shouldRecompile)
-        EnqueuePipelineTask(PipelineTaskType::RecompilePipelines);
+//    if (shouldRecompile)
+//        EnqueuePipelineTask(PipelineTaskType::RecompilePipelines, {});
 }
+
+// There is a bug on AMD where restart indices cause incorrect culling and prevent some triangles from being rendered.
+// This seems to happen on both Windows AMD drivers and Mesa. Converting restart indices to degenerate triangles fixes it.
+static void ConvertToDegenerateTriangles(uint16_t* indices, uint32_t indexCount, uint16_t*& newIndices, uint32_t& newIndexCount)
+{
+    newIndices = reinterpret_cast<uint16_t*>(g_userHeap.Alloc(indexCount * sizeof(uint16_t) * 3));
+    newIndexCount = 0;
+
+    bool stripStart = true;
+    uint32_t stripSize = 0;
+    uint16_t lastIndex = 0;
+
+    for (uint32_t i = 0; i < indexCount; i++)
+    {
+        uint16_t index = indices[i];
+        if (index == 0xFFFF)
+        {
+            if ((stripSize % 2) != 0)
+                newIndices[newIndexCount++] = lastIndex;
+
+            stripStart = true;
+            stripSize = 0;
+        }
+        else 
+        {
+            if (stripStart && newIndexCount != 0)
+            {
+                newIndices[newIndexCount++] = lastIndex;
+                newIndices[newIndexCount++] = index;
+            }
+
+            newIndices[newIndexCount++] = index;
+            stripStart = false;
+            ++stripSize;
+            lastIndex = index;
+        }
+    }
+}
+
+struct MeshResource
+{
+    MARATHON_INSERT_PADDING(0x4);
+    be<uint32_t> indexCount;
+    be<uint32_t> indices;
+};
+
+static std::vector<uint16_t*> g_newIndicesToFree;
+
+// Hedgehog::Mirage::CMeshData::Make
+// PPC_FUNC_IMPL(__imp__sub_82E44AF8);
+// PPC_FUNC(sub_82E44AF8)
+// {
+//     uint16_t* newIndicesToFree = nullptr;
+
+//     auto databaseData = reinterpret_cast<Hedgehog::Database::CDatabaseData*>(base + ctx.r3.u32);
+//     if (g_triangleStripWorkaround && !databaseData->IsMadeOne())
+//     {
+//         auto meshResource = reinterpret_cast<MeshResource*>(base + ctx.r4.u32);
+
+//         if (meshResource->indexCount != 0)
+//         {
+//             uint16_t* newIndices;
+//             uint32_t newIndexCount;
+
+//             ConvertToDegenerateTriangles(
+//                 reinterpret_cast<uint16_t*>(base + meshResource->indices),
+//                 meshResource->indexCount,
+//                 newIndices,
+//                 newIndexCount);
+
+//             meshResource->indexCount = newIndexCount;
+//             meshResource->indices = static_cast<uint32_t>(reinterpret_cast<uint8_t*>(newIndices) - base);
+
+//             if (PPC_LOAD_U32(0x83396E98) != NULL)
+//             {
+//                 // If index buffers are getting merged, new indices need to survive until the merge happens.
+//                 g_newIndicesToFree.push_back(newIndices);
+//             }
+//             else 
+//             {
+//                 // Otherwise, we can free it immediately.
+//                 newIndicesToFree = newIndices;
+//             }
+//         }
+//     }
+
+//     __imp__sub_82E44AF8(ctx, base);
+
+//     if (newIndicesToFree != nullptr)
+//         g_userHeap.Free(newIndicesToFree);
+// }
+
+// Hedgehog::Mirage::CShareVertexBuffer::Reset
+// PPC_FUNC_IMPL(__imp__sub_82E250D0);
+// PPC_FUNC(sub_82E250D0)
+// {
+//     __imp__sub_82E250D0(ctx, base);
+
+//     for (auto newIndicesToFree : g_newIndicesToFree)
+//         g_userHeap.Free(newIndicesToFree);
+
+//     g_newIndicesToFree.clear();
+// }
+
+struct LightAndIndexBufferResourceV1
+{
+    MARATHON_INSERT_PADDING(0x4);
+    be<uint32_t> indexCount;
+    be<uint32_t> indices;
+};
+
+// Hedgehog::Mirage::CLightAndIndexBufferData::MakeV1
+// PPC_FUNC_IMPL(__imp__sub_82E3AFC8);
+// PPC_FUNC(sub_82E3AFC8)
+// {
+//     uint16_t* newIndices = nullptr;
+
+//     auto databaseData = reinterpret_cast<Hedgehog::Database::CDatabaseData*>(base + ctx.r3.u32);
+//     if (g_triangleStripWorkaround && !databaseData->IsMadeOne())
+//     {
+//         auto lightAndIndexBufferResource = reinterpret_cast<LightAndIndexBufferResourceV1*>(base + ctx.r4.u32);
+
+//         if (lightAndIndexBufferResource->indexCount != 0)
+//         {
+//             uint32_t newIndexCount;
+
+//             ConvertToDegenerateTriangles(
+//                 reinterpret_cast<uint16_t*>(base + lightAndIndexBufferResource->indices),
+//                 lightAndIndexBufferResource->indexCount,
+//                 newIndices,
+//                 newIndexCount);
+
+//             lightAndIndexBufferResource->indexCount = newIndexCount;
+//             lightAndIndexBufferResource->indices = static_cast<uint32_t>(reinterpret_cast<uint8_t*>(newIndices) - base);
+//         }
+//     }
+
+//     __imp__sub_82E3AFC8(ctx, base);
+
+//     if (newIndices != nullptr)
+//         g_userHeap.Free(newIndices);
+// }
+
+struct LightAndIndexBufferResourceV5
+{
+    MARATHON_INSERT_PADDING(0x8);
+    be<uint32_t> indexCount;
+    be<uint32_t> indices;
+};
+
+// Hedgehog::Mirage::CLightAndIndexBufferData::MakeV5
+// PPC_FUNC_IMPL(__imp__sub_82E3B1C0);
+// PPC_FUNC(sub_82E3B1C0)
+// {
+//     uint16_t* newIndices = nullptr;
+
+//     auto databaseData = reinterpret_cast<Hedgehog::Database::CDatabaseData*>(base + ctx.r3.u32);
+//     if (g_triangleStripWorkaround && !databaseData->IsMadeOne())
+//     {
+//         auto lightAndIndexBufferResource = reinterpret_cast<LightAndIndexBufferResourceV5*>(base + ctx.r4.u32);
+
+//         if (lightAndIndexBufferResource->indexCount != 0)
+//         {
+//             uint32_t newIndexCount;
+
+//             ConvertToDegenerateTriangles(
+//                 reinterpret_cast<uint16_t*>(base + lightAndIndexBufferResource->indices),
+//                 lightAndIndexBufferResource->indexCount,
+//                 newIndices,
+//                 newIndexCount);
+
+//             lightAndIndexBufferResource->indexCount = newIndexCount;
+//             lightAndIndexBufferResource->indices = static_cast<uint32_t>(reinterpret_cast<uint8_t*>(newIndices) - base);
+//         }
+//     }
+
+//     __imp__sub_82E3B1C0(ctx, base);
+
+//     if (newIndices != nullptr)
+//         g_userHeap.Free(newIndices);
+// }
 
 GUEST_FUNCTION_HOOK(sub_8253EC98, CreateDevice);
 

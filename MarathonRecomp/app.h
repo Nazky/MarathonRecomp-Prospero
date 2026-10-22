@@ -22,6 +22,8 @@ public:
     static inline double s_time = 0.0; // How much time elapsed since the game started.
 
     static void Restart(std::vector<std::string> restartArgs = {});
+    // Close through the PS5 shell for settings that require a manual relaunch.
+    static void RestartForSettings(std::vector<std::string> restartArgs = {});
     static void Exit();
 };
 

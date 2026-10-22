@@ -14,6 +14,10 @@
 #include <app.h>
 #include <decompressor.h>
 #include <exports.h>
+#include <mod/mod_loader.h>
+
+#include <algorithm>
+#include <utility>
 
 static constexpr int MAX_VISIBLE_ROWS = 3;
 
@@ -45,6 +49,8 @@ static int g_optionIndex{};
 static int g_optionCount{};
 static IConfigDef* g_optionCurrent{};
 static bool g_optionCanReset{};
+static std::string g_modManagerError{};
+static std::string g_lastModDescription{};
 
 static std::unique_ptr<GuestTexture> g_upTexMainMenu9{};
 
@@ -56,6 +62,7 @@ static std::string& GetCategoryName(OptionsMenuCategory category)
         case OptionsMenuCategory::Input: return Localise("Options_Category_Input");
         case OptionsMenuCategory::Audio: return Localise("Options_Category_Audio");
         case OptionsMenuCategory::Video: return Localise("Options_Category_Video");
+        case OptionsMenuCategory::Mods: return Localise("Options_Category_Mods");
         case OptionsMenuCategory::Debug: return Localise("Options_Category_Debug");
     }
 
@@ -70,6 +77,7 @@ static std::string& GetCategoryDescription(OptionsMenuCategory category)
         case OptionsMenuCategory::Input: return Localise("Options_Desc_Category_Input");
         case OptionsMenuCategory::Audio: return Localise("Options_Desc_Category_Audio");
         case OptionsMenuCategory::Video: return Localise("Options_Desc_Category_Video");
+        case OptionsMenuCategory::Mods: return Localise("Options_Desc_Category_Mods");
         case OptionsMenuCategory::Debug: return Localise("Options_Desc_Category_Debug");
     }
 
@@ -86,6 +94,8 @@ static void ResetOptionSelection()
     g_optionIndex = 0;
     g_optionCurrent = nullptr;
     g_optionCanReset = false;
+    g_modManagerError.clear();
+    g_lastModDescription.clear();
 }
 
 static void ResetSelection()
@@ -256,7 +266,7 @@ void DrawSelectionArrows(ImVec2 min, ImVec2 max, bool isSelected)
     auto arrowOffsetXMin = Scale(30, true);
     auto arrowOffsetXMax = Scale(20, true);
 
-    auto arrowOffsetX = Lerp(arrowOffsetXMin, arrowOffsetXMax, sin(motionTime * std::numbers::pi));
+    auto arrowOffsetX = Lerp(arrowOffsetXMin, arrowOffsetXMax, sin(motionTime * M_PI));
     auto arrowOffsetY = Scale(10, true);
 
     auto arrowLeftOffsetX = s_isLeftArrowMotion ? arrowOffsetX : arrowOffsetXMin;
@@ -532,17 +542,13 @@ static void DrawOption
                 {
                     config->Value = s_oldValue;
 
-                    // Don't run callbacks if Window Size change is cancelled.
-                    if (static_cast<void*>(config) != &Config::WindowSize)
-                    {
-                        VideoConfigValueChangedCallback(config);
+                    VideoConfigValueChangedCallback(config);
 
-                        if (config->Callback)
-                            config->Callback(config);
+                    if (config->Callback)
+                        config->Callback(config);
 
-                        if (config->ApplyCallback)
-                            config->ApplyCallback(config);
-                    }
+                    if (config->ApplyCallback)
+                        config->ApplyCallback(config);
                 }
 
                 OptionsMenu::SetFlowState(OptionsMenuFlowState::OptionCursor);
@@ -610,77 +616,102 @@ static void DrawOption
                 }
                 else if constexpr (isSliderType)
                 {
-                    auto time = ImGui::GetTime();
-                    auto fastIncrement = isSlider && (g_leftWasHeld || g_rightWasHeld) && (time - g_lastTappedTime) > 0.5;
-                    auto playIncrementSound = true;
-
-                    static auto s_fastIncrementHoldTime = 0.0;
-                    static auto s_lastIncrementSoundTime = 0.0;
-
-                    static constexpr auto INCREMENT_TIME = 1.0 / 60.0;
-                    static constexpr auto INCREMENT_SOUND_TIME = 1.0 / 20.0;
-
-                    if (fastIncrement)
+#if defined(__PROSPERO__)
+                    if ((void*)config == (void*)&Config::FPS)
                     {
-                        s_fastIncrementHoldTime += App::s_deltaTime;
+                        if (increment || decrement)
+                        {
+                            int32_t choiceIndex = 0;
+                            while (choiceIndex < FPS_PROSPERO_OPTION_COUNT &&
+                                   FPS_PROSPERO_OPTIONS[choiceIndex] != config->Value)
+                                ++choiceIndex;
+                            if (choiceIndex >= FPS_PROSPERO_OPTION_COUNT)
+                                choiceIndex = 0;
+
+                            if (decrement)
+                                choiceIndex = (choiceIndex + FPS_PROSPERO_OPTION_COUNT - 1) % FPS_PROSPERO_OPTION_COUNT;
+                            else
+                                choiceIndex = (choiceIndex + 1) % FPS_PROSPERO_OPTION_COUNT;
+
+                            config->Value = FPS_PROSPERO_OPTIONS[choiceIndex];
+                            Game_PlaySound("move");
+                        }
                     }
                     else
+#endif
                     {
-                        s_fastIncrementHoldTime = 0.0;
-                    }
+                        auto time = ImGui::GetTime();
+                        auto fastIncrement = isSlider && (g_leftWasHeld || g_rightWasHeld) && (time - g_lastTappedTime) > 0.5;
+                        auto playIncrementSound = true;
 
-                    if (fastIncrement)
-                    {
-                        playIncrementSound = (time - s_lastIncrementSoundTime) > INCREMENT_SOUND_TIME;
+                        static auto s_fastIncrementHoldTime = 0.0;
+                        static auto s_lastIncrementSoundTime = 0.0;
 
-                        if (s_fastIncrementHoldTime < INCREMENT_TIME)
+                        static constexpr auto INCREMENT_TIME = 1.0 / 60.0;
+                        static constexpr auto INCREMENT_SOUND_TIME = 1.0 / 20.0;
+
+                        if (fastIncrement)
                         {
-                            fastIncrement = false;
+                            s_fastIncrementHoldTime += App::s_deltaTime;
                         }
                         else
                         {
-                            g_lastIncrementTime = time;
-                        }
-                    }
-
-                    if (fastIncrement)
-                    {
-                        increment = g_rightWasHeld;
-                        decrement = g_leftWasHeld;
-                    }
-
-                    do
-                    {
-                        if constexpr (std::is_integral_v<T>)
-                        {
-                            if (decrement)
-                                config->Value -= 1;
-                            else if (increment)
-                                config->Value += 1;
-                        }
-                        else
-                        {
-                            if (decrement)
-                                config->Value -= 0.01f;
-                            else if (increment)
-                                config->Value += 0.01f;
+                            s_fastIncrementHoldTime = 0.0;
                         }
 
                         if (fastIncrement)
-                            s_fastIncrementHoldTime -= INCREMENT_TIME;
+                        {
+                            playIncrementSound = (time - s_lastIncrementSoundTime) > INCREMENT_SOUND_TIME;
+
+                            if (s_fastIncrementHoldTime < INCREMENT_TIME)
+                            {
+                                fastIncrement = false;
+                            }
+                            else
+                            {
+                                g_lastIncrementTime = time;
+                            }
+                        }
+
+                        if (fastIncrement)
+                        {
+                            increment = g_rightWasHeld;
+                            decrement = g_leftWasHeld;
+                        }
+
+                        do
+                        {
+                            if constexpr (std::is_integral_v<T>)
+                            {
+                                if (decrement)
+                                    config->Value -= 1;
+                                else if (increment)
+                                    config->Value += 1;
+                            }
+                            else
+                            {
+                                if (decrement)
+                                    config->Value -= 0.01f;
+                                else if (increment)
+                                    config->Value += 0.01f;
+                            }
+
+                            if (fastIncrement)
+                                s_fastIncrementHoldTime -= INCREMENT_TIME;
+                        }
+                        while (fastIncrement && s_fastIncrementHoldTime >= INCREMENT_TIME);
+
+                        auto isValueInBounds = config->Value >= valueMin && config->Value <= valueMax;
+
+                        if ((increment || decrement) && isValueInBounds && playIncrementSound)
+                        {
+                            Game_PlaySound("move");
+
+                            s_lastIncrementSoundTime = time;
+                        }
+
+                        config->Value = std::clamp(config->Value, valueMin, valueMax);
                     }
-                    while (fastIncrement && s_fastIncrementHoldTime >= INCREMENT_TIME);
-
-                    auto isValueInBounds = config->Value >= valueMin && config->Value <= valueMax;
-
-                    if ((increment || decrement) && isValueInBounds && playIncrementSound)
-                    {
-                        Game_PlaySound("move");
-
-                        s_lastIncrementSoundTime = time;
-                    }
-
-                    config->Value = std::clamp(config->Value, valueMin, valueMax);
                 }
                 else if constexpr (std::is_same_v<T, bool>)
                 {
@@ -720,6 +751,14 @@ static void DrawOption
     }
     else if constexpr (std::is_same_v<T, int32_t>)
     {
+#if defined(__PROSPERO__)
+        if (config == &Config::FPS)
+        {
+            valueText = fmt::format("{} {}", config->Value, Localise("SystemInfo_FPS"));
+            isValueCentred = true;
+        }
+        else
+#endif
         if (config == &Config::WindowSize)
         {
             if (Config::Fullscreen)
@@ -732,13 +771,13 @@ static void DrawOption
             }
             else
             {
-                const auto& windowModes = GameWindow::s_windowModes;
+                auto displayModes = GameWindow::GetDisplayModes();
 
-                if (config->Value >= 0 && config->Value < windowModes.size())
+                if (config->Value >= 0 && config->Value < displayModes.size())
                 {
-                    const auto& windowMode = windowModes[config->Value];
+                    auto& displayMode = displayModes[config->Value];
 
-                    valueText = fmt::format("{}x{}", windowMode.w, windowMode.h);
+                    valueText = fmt::format("{}x{}", displayMode.w, displayMode.h);
                 }
                 else
                 {
@@ -798,6 +837,150 @@ static void DrawOption
     SetShaderModifier(IMGUI_SHADER_MODIFIER_NONE);
 }
 
+static void UpdateManagedModDescription(const UserModInfo& mod)
+{
+    std::string description = mod.description;
+    if (!mod.author.empty())
+    {
+        if (!description.empty())
+            description += "\n";
+        description += mod.author;
+    }
+
+    if (description.empty())
+        description = mod.folderName;
+
+    if (!g_modManagerError.empty())
+    {
+        description = g_modManagerError;
+    }
+    else
+    {
+        description += "\n\n" + Localise("Options_Desc_Category_Mods");
+    }
+
+    if (description != g_lastModDescription)
+    {
+        OptionsMenu::s_commonMenu.SetDescription(description, false);
+        g_lastModDescription = std::move(description);
+    }
+}
+
+static void ProcessManagedModInput()
+{
+    const auto& mods = ModLoader::GetUserMods();
+    g_optionCurrent = nullptr;
+    g_optionCanReset = false;
+
+    if (mods.empty())
+    {
+        g_optionIndex = 0;
+        CheckAndDiscard(g_isAccepted);
+        return;
+    }
+
+    g_optionIndex = std::clamp(g_optionIndex, 0, static_cast<int>(mods.size()) - 1);
+    if (OptionsMenu::s_flowState != OptionsMenuFlowState::OptionCursor)
+        return;
+
+    if (CheckAndDiscard(g_isAccepted))
+    {
+        std::string errorMessage;
+        const bool enabled = !mods[g_optionIndex].enabled;
+        if (ModLoader::SetUserModEnabled(static_cast<size_t>(g_optionIndex), enabled, errorMessage))
+        {
+            g_modManagerError.clear();
+            Game_PlaySound("main_deside");
+        }
+        else
+        {
+            g_modManagerError = errorMessage;
+            LOGF_WARNING("Could not save managed mod state: {}.", errorMessage);
+        }
+
+        g_lastModDescription.clear();
+        return;
+    }
+
+    const int direction = g_left ? -1 : g_right ? 1 : 0;
+    if (direction == 0 || (direction < 0 && g_optionIndex == 0) ||
+        (direction > 0 && g_optionIndex >= static_cast<int>(mods.size()) - 1))
+        return;
+
+    std::string errorMessage;
+    if (ModLoader::MoveUserMod(static_cast<size_t>(g_optionIndex), direction, errorMessage))
+    {
+        g_optionIndex += direction;
+        g_modManagerError.clear();
+        g_lastModDescription.clear();
+        g_cursorArrowsTime = ImGui::GetTime();
+        Game_PlaySound("move");
+    }
+    else if (!errorMessage.empty())
+    {
+        g_modManagerError = errorMessage;
+        g_lastModDescription.clear();
+        LOGF_WARNING("Could not save managed mod order: {}.", errorMessage);
+    }
+}
+
+static void DrawManagedModOption(int rowIndex, int modCount, const UserModInfo& mod)
+{
+    auto drawList = ImGui::GetBackgroundDrawList();
+    const auto clipRectMin = drawList->GetClipRectMin();
+    const auto clipRectMax = drawList->GetClipRectMax();
+    const auto optionHeight = Scale(92, true);
+    auto offsetScroll = 0.0f;
+
+    if (modCount > MAX_VISIBLE_ROWS)
+    {
+        if (g_optionIndex >= modCount - (MAX_VISIBLE_ROWS - 1))
+            offsetScroll = -(modCount - MAX_VISIBLE_ROWS) * optionHeight;
+        else if (g_optionIndex >= 1)
+            offsetScroll = -(g_optionIndex - 1) * optionHeight;
+    }
+
+    const auto offsetY = optionHeight * rowIndex + offsetScroll;
+    const bool isCurrent = g_optionIndex == rowIndex;
+    const auto motionTime = ComputeLinearMotion(g_categoryTime, 0, 5, OptionsMenu::s_state != OptionsMenuState::Idle);
+    const auto rowMin = ImVec2{ clipRectMin.x, clipRectMin.y + offsetY };
+    const auto rowMax = ImVec2{ clipRectMax.x - Scale(8, true), rowMin.y + Scale(78, true) };
+    const auto rowColour = isCurrent
+        ? IM_COL32(21, 86, 145, static_cast<int>(210 * motionTime))
+        : IM_COL32(0, 0, 0, static_cast<int>(110 * motionTime));
+    const auto outlineColour = isCurrent
+        ? IM_COL32(255, 255, 255, static_cast<int>(180 * motionTime))
+        : IM_COL32(255, 255, 255, static_cast<int>(50 * motionTime));
+
+    drawList->AddRectFilled(rowMin, rowMax, rowColour, Scale(5, true));
+    drawList->AddRect(rowMin, rowMax, outlineColour, Scale(5, true));
+
+    if (isCurrent && OptionsMenu::s_flowState == OptionsMenuFlowState::OptionCursor)
+        DrawArrowCursor({ rowMin.x + Scale(8, true), rowMin.y + Scale(11, true) }, g_cursorArrowsTime, true, false, OptionsMenu::s_state != OptionsMenuState::Idle);
+
+    const std::string title = mod.title.empty() ? mod.folderName : mod.title;
+    const auto textColour = IM_COL32(255, 255, 255, static_cast<int>(255 * motionTime));
+    const auto titlePos = ImVec2{ rowMin.x + Scale(52, true), rowMin.y + Scale(10, true) };
+    const auto status = Localise(mod.enabled ? "Options_Mods_Enabled" : "Options_Mods_Disabled");
+    const auto statusSize = g_pFntRodin->CalcTextSizeA(g_fntRodinSize, FLT_MAX, 0.0f, status.c_str());
+    const auto statusMin = ImVec2{ rowMax.x - statusSize.x - Scale(28, true), rowMin.y + Scale(10, true) };
+
+    SetShaderModifier(IMGUI_SHADER_MODIFIER_LOW_QUALITY_TEXT);
+    drawList->PushClipRect(titlePos, { statusMin.x - Scale(10, true), rowMax.y }, true);
+    drawList->AddText(g_pFntRodin, g_fntRodinSize, titlePos, textColour, title.c_str());
+    drawList->PopClipRect();
+    drawList->AddText(g_pFntRodin, g_fntRodinSize, statusMin, textColour, status.c_str());
+
+    const auto folderText = mod.folderName;
+    drawList->AddText(
+        g_pFntRodin,
+        g_fntRodinSize * 0.72f,
+        { rowMin.x + Scale(52, true), rowMin.y + Scale(43, true) },
+        IM_COL32(210, 222, 236, static_cast<int>(215 * motionTime)),
+        folderText.c_str());
+    SetShaderModifier(IMGUI_SHADER_MODIFIER_NONE);
+}
+
 static void DrawOptions(ImVec2 min, ImVec2 max)
 {
     auto drawList = ImGui::GetBackgroundDrawList();
@@ -825,7 +1008,9 @@ static void DrawOptions(ImVec2 min, ImVec2 max)
         case OptionsMenuCategory::Input:
             DrawOption(rowCount++, &Config::HorizontalCamera, true);
             DrawOption(rowCount++, &Config::VerticalCamera, true);
+#if !defined(__PROSPERO__)
             DrawOption(rowCount++, &Config::AllowBackgroundInput, true);
+#endif
             DrawOption(rowCount++, &Config::ControllerIcons, !OptionsMenu::s_isPause, cmnReason);
             DrawOption(rowCount++, &Config::LightDash, true, nullptr, ENUM_VALUE(ELightDash), false, true);
             DrawOption(rowCount++, &Config::SlidingAttack, true, nullptr, ENUM_VALUE(ESlidingAttack), false, true);
@@ -836,15 +1021,20 @@ static void DrawOptions(ImVec2 min, ImVec2 max)
             DrawOption(rowCount++, &Config::MusicVolume, true);
             DrawOption(rowCount++, &Config::EffectsVolume, true);
             DrawOption(rowCount++, &Config::ChannelConfiguration, !OptionsMenu::s_isPause, cmnReason);
+#if !defined(__PROSPERO__)
             DrawOption(rowCount++, &Config::MuteOnFocusLost, true);
+#endif
+#if !defined(__PROSPERO__)
             DrawOption(rowCount++, &Config::MusicAttenuation, AudioPatches::CanAttenuate(), &Localise("Options_Desc_OSNotSupported"));
+#endif
             break;
 
         case OptionsMenuCategory::Video:
         {
+#if !defined(__PROSPERO__)
             DrawOption(rowCount++, &Config::WindowSize, !Config::Fullscreen,
                 &Localise("Options_Desc_NotAvailableFullscreen"),
-                0, 0, (int)GameWindow::s_windowModes.size() - 1, false);
+                0, 0, (int)GameWindow::GetDisplayModes().size() - 1, false);
 
             auto displayCount = GameWindow::GetDisplayCount();
             auto canChangeMonitor = Config::Fullscreen && displayCount > 1;
@@ -854,11 +1044,21 @@ static void DrawOptions(ImVec2 min, ImVec2 max)
                 monitorReason = &Localise("Options_Desc_NotAvailableHardware");
 
             DrawOption(rowCount++, &Config::Monitor, canChangeMonitor, monitorReason, 0, 0, displayCount - 1, false);
+#endif
             DrawOption(rowCount++, &Config::AspectRatio, true);
+#if !defined(__PROSPERO__)
             DrawOption(rowCount++, &Config::ResolutionScale, true, nullptr, 0.25f, 1.0f, 2.0f);
+#endif
+#if !defined(__PROSPERO__)
             DrawOption(rowCount++, &Config::Fullscreen, true);
+#endif
             DrawOption(rowCount++, &Config::VSync, true);
+#if defined(__PROSPERO__)
+            DrawOption(rowCount++, &Config::FPS, true, nullptr, 0, 0, 0, false);
+#else
             DrawOption(rowCount++, &Config::FPS, true, nullptr, FPS_MIN, 120, FPS_MAX);
+#endif
+            DrawOption(rowCount++, &Config::ShowSystemInfoOverlay, true);
             DrawOption(rowCount++, &Config::Brightness, true);
             DrawOption(rowCount++, &Config::AntiAliasing, false, devReason);                           // TODO: implement MSAA.          DrawOption(rowCount++, &Config::AntiAliasing, Config::AntiAliasing.InaccessibleValues.size() != 3, &Localise("Options_Desc_NotAvailableHardware"));
             DrawOption(rowCount++, &Config::TransparencyAntiAliasing, false, devReason);               // TODO: implement MSAA.          DrawOption(rowCount++, &Config::TransparencyAntiAliasing, Config::AntiAliasing != EAntiAliasing::Off, &Localise("Options_Desc_NotAvailableMSAA"));
@@ -867,6 +1067,41 @@ static void DrawOptions(ImVec2 min, ImVec2 max)
             DrawOption(rowCount++, &Config::RadialBlur, true);
             DrawOption(rowCount++, &Config::CutsceneAspectRatio, true);
             DrawOption(rowCount++, &Config::UIAlignmentMode, true);
+
+            break;
+        }
+
+        case OptionsMenuCategory::Mods:
+        {
+            ProcessManagedModInput();
+            const auto& mods = ModLoader::GetUserMods();
+
+            if (mods.empty())
+            {
+                const std::string message = Localise("Options_Mods_Empty");
+                const std::string directory = ModLoader::GetManagedModsDirectory().string();
+                const auto position = ImVec2{ min.x + Scale(20, true), min.y + Scale(24, true) };
+
+                SetShaderModifier(IMGUI_SHADER_MODIFIER_LOW_QUALITY_TEXT);
+                drawList->AddText(g_pFntRodin, g_fntRodinSize, position, IM_COL32_WHITE, message.c_str());
+                drawList->AddText(g_pFntRodin, g_fntRodinSize * 0.8f,
+                    { position.x, position.y + Scale(38, true) }, IM_COL32(205, 220, 240, 255), directory.c_str());
+                SetShaderModifier(IMGUI_SHADER_MODIFIER_NONE);
+                OptionsMenu::s_commonMenu.SetDescription(GetCategoryDescription(OptionsMenuCategory::Mods), false);
+            }
+            else
+            {
+                g_optionCount = static_cast<int>(mods.size());
+                g_optionIndex = std::clamp(g_optionIndex, 0, g_optionCount - 1);
+                if (OptionsMenu::s_flowState == OptionsMenuFlowState::OptionCursor)
+                    UpdateManagedModDescription(mods[g_optionIndex]);
+
+                for (size_t i = 0; i < mods.size(); ++i)
+                {
+                    DrawManagedModOption(static_cast<int>(i), static_cast<int>(mods.size()), mods[i]);
+                    ++rowCount;
+                }
+            }
 
             break;
         }
@@ -1091,7 +1326,11 @@ void OptionsMenu::Draw()
             static bool s_restartFaderBegun = false;
             static int s_restartMessageResult = -1;
 
+#if defined(__PROSPERO__)
+            auto message = Localise("Options_Message_RestartConfirmClose");
+#else
             auto message = Localise("Options_Message_Restart");
+#endif
             std::array<std::string, 2> options = { Localise("Common_Yes"), Localise("Common_No") };
 
             if (!s_restartPromptOpened)
@@ -1105,6 +1344,9 @@ void OptionsMenu::Draw()
                         message += "\n- " + def->GetNameLocalised(Config::Language);
                 }
 
+                if (ModLoader::IsRestartRequired())
+                    message += "\n- " + Localise("Options_Restart_Mods");
+
                 s_restartPromptOpened = true;
             }
 
@@ -1112,7 +1354,7 @@ void OptionsMenu::Draw()
             {
                 if (s_restartMessageResult == 0)
                 {
-                    Fader::FadeOut(1, []() { App::Restart({ "--use-cwd --skip-logos" }); });
+                    Fader::FadeOut(1, []() { App::RestartForSettings({ "--use-cwd --skip-logos" }); });
                     s_restartFaderBegun = true;
                 }
                 else
@@ -1191,6 +1433,7 @@ void OptionsMenu::Draw()
                 Game_PlaySound("window_close");
 
                 SetFlowState(OptionsMenuFlowState::CategoryCursor);
+                ResetOptionSelection();
 
                 g_cursorArrowsTime = ImGui::GetTime();
 
@@ -1286,7 +1529,7 @@ bool OptionsMenu::IsRestartRequired()
             return true;
     }
 
-    return false;
+    return ModLoader::IsRestartRequired();
 }
 
 void OptionsMenu::SetFlowState(OptionsMenuFlowState flowState)

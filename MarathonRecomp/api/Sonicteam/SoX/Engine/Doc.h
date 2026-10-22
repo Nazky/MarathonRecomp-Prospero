@@ -11,14 +11,7 @@ namespace Sonicteam::SoX::Engine
     class Doc
     {
     public:
-        struct Vftable
-        {
-            be<uint32_t> fpDestroy;
-            be<uint32_t> fpUpdate;
-            MARATHON_INSERT_PADDING(0x04);
-        };
-
-        xpointer<Vftable> m_pVftable;
+        xpointer<void> m_pVftable;
         MARATHON_INSERT_PADDING(4);
         xpointer<DocMode> m_pDocMode;
         xpointer<Task> m_pRootTask;
@@ -30,15 +23,9 @@ namespace Sonicteam::SoX::Engine
         XRTL_CRITICAL_SECTION m_CriticalSection2;
 
         template <typename T = DocMode>
-        T* GetDocMode(const char* name = nullptr)
+        T* GetDocMode()
         {
-            if (!m_pDocMode)
-                return nullptr;
-
-            if (name && strcmp(m_pDocMode->GetName(), name) != 0)
-                return nullptr;
-
-            return static_cast<T*>(m_pDocMode.get());
+            return (T*)m_pDocMode.get();
         }
     };
 

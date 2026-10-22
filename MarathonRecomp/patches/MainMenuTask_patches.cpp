@@ -1,8 +1,25 @@
 #include "MainMenuTask_patches.h"
 #include <ui/achievement_menu.h>
 #include <ui/button_window.h>
+#include <ui/mods_menu.h>
 #include <ui/options_menu.h>
+#include <mod/mod_loader.h>
+#include <Sonicteam/SoX/Input/Manager.h>
+#include <app.h>
 #include <exports.h>
+
+static bool IsSquarePressed()
+{
+    if (!App::s_pApp || !App::s_pApp->m_pDoc)
+        return false;
+
+    for (auto& inputManager : App::s_pApp->m_pDoc->m_vspInputManagers)
+    {
+        if (inputManager && inputManager->m_PadState.IsPressed(Sonicteam::SoX::Input::KeyState_X))
+            return true;
+    }
+    return false;
+}
 
 // Sonicteam::MainMenuTask::Update
 PPC_FUNC_IMPL(__imp__sub_824FFCF8);
@@ -12,6 +29,27 @@ PPC_FUNC(sub_824FFCF8)
     auto pHUDMainMenu = pMainMenuTask->m_pHUDMainMenu;
 
 #ifdef MARATHON_RECOMP_OPTIONS_MENU
+    static bool s_isShowingTitleButtonPrompt{};
+
+    const bool isTitleMainMenu = pMainMenuTask->m_State == Sonicteam::MainMenuTask::MainMenuState_MainMenu;
+    const bool hasManagedMods = !ModLoader::GetUserMods().empty();
+    if (isTitleMainMenu && hasManagedMods && !OptionsMenu::s_isVisible && !ModsMenu::BlocksMainMenuInput() && IsSquarePressed())
+    {
+        ModsMenu::Open();
+        Game_PlaySound("main_deside");
+        pMainMenuTask->m_PressedButtons = 0;
+    }
+
+    if (ModsMenu::BlocksMainMenuInput())
+    {
+        pMainMenuTask->m_PressedButtons = 0;
+        if (!ModsMenu::s_isVisible)
+        {
+            ButtonWindow::Close();
+            MainMenuTaskPatches::s_hideButtonWindow = true;
+        }
+    }
+
     if (pHUDMainMenu)
     {
         // Hide original "OPTIONS" title.
@@ -70,6 +108,24 @@ PPC_FUNC(sub_824FFCF8)
         else
         {
             s_isReturningFromOptionsMenu = false;
+        }
+    }
+
+    if (isTitleMainMenu && !OptionsMenu::s_isVisible && !ModsMenu::BlocksMainMenuInput())
+    {
+        ButtonWindow::Open(hasManagedMods ? "Button_SelectQuitMods" : "Button_SelectQuit", false);
+        MainMenuTaskPatches::s_hideButtonWindow = true;
+        s_isShowingTitleButtonPrompt = true;
+    }
+    else if (s_isShowingTitleButtonPrompt)
+    {
+        if (OptionsMenu::s_isVisible || ModsMenu::s_isVisible || ModsMenu::BlocksMainMenuInput())
+            s_isShowingTitleButtonPrompt = false;
+        else if (!isTitleMainMenu)
+        {
+            ButtonWindow::Close();
+            MainMenuTaskPatches::s_hideButtonWindow = false;
+            s_isShowingTitleButtonPrompt = false;
         }
     }
 #endif

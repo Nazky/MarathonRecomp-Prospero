@@ -39,14 +39,7 @@ In the installer, you must select the following **Workloads** and **Individual c
 ### Linux
 The following command will install the required dependencies on a distro that uses `apt` (such as Debian-based distros).
 ```bash
-sudo apt install pkg-config curl cmake ninja-build clang clang-tools lld llvm libgtk-3-dev
-```
-The following command will install the required dependencies on a distro that uses `dnf` (such as Fedora-based distros).
-
-Note: The second line of dependencies is to satisfy the vcpkg OpenSSL build.
-```bash
-sudo dnf install pkg-config curl cmake ninja-build clang lld llvm gtk3-devel \
-                 perl-FindBin perl-IPC-Cmd perl-Time-Piece perl-File-Compare perl-File-Copy
+sudo apt install autoconf automake libtool pkg-config curl cmake ninja-build clang clang-tools libgtk-3-dev
 ```
 The following command will install the required dependencies on a distro that uses `pacman` (such as Arch-based distros).
 ```bash
@@ -55,7 +48,7 @@ sudo pacman -S base-devel ninja lld clang gtk3
 You can also find the equivalent packages for your preferred distro.
 
 > [!NOTE]
-> This list may not be comprehensive for your particular distro and you may be required to install additional packages, should an error occur during configuration. You may also require additional dependencies, depending on your audio and window systems, for the game to be fully functional.
+> This list may not be comprehensive for your particular distro and you may be required to install additional packages, should an error occur during configuration.
 
 ### macOS
 You will need to install the latest Xcode from Apple.

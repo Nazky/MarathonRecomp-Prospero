@@ -1,3 +1,12 @@
+#include <os/media.h>
+
+#if defined(__PROSPERO__)
+bool os::media::IsExternalMediaPlaying()
+{
+    // The PS5 build has no desktop MPRIS/D-Bus session.
+    return false;
+}
+#else
 #include <algorithm>
 #include <atomic>
 #include <optional>
@@ -6,7 +15,6 @@
 #include <unordered_map>
 #include <ranges>
 #include <gio/gio.h>
-#include <os/media.h>
 #include <os/logger.h>
 
 enum class PlaybackStatus
@@ -326,3 +334,4 @@ bool os::media::IsExternalMediaPlaying()
 
     return g_isPlaying;
 }
+#endif

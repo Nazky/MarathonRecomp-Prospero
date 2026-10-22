@@ -96,6 +96,9 @@ FileHandle* XCreateFileA
     assert(((dwCreationDisposition & ~(CREATE_NEW | CREATE_ALWAYS)) == 0) && "Unknown creation disposition bits.");
 
     std::filesystem::path filePath = FileSystem::ResolvePath(lpFileName, true);
+#if defined(__PROSPERO__)
+    const bool isArchiveFile = filePath.extension() == ".arc";
+#endif
     std::fstream fileStream;
     std::ios::openmode fileOpenMode = std::ios::binary;
     if (dwDesiredAccess & (GENERIC_READ | FILE_READ_DATA))
@@ -110,12 +113,22 @@ FileHandle* XCreateFileA
 
     fileStream.open(filePath, fileOpenMode);
 
+    std::filesystem::path cachedPath;
     if (!fileStream.is_open()) {
-        std::filesystem::path cachedPath = FindInPathCache(filePath.string());
+        cachedPath = FindInPathCache(filePath.string());
         if (!cachedPath.empty()) {
             fileStream.open(cachedPath, fileOpenMode);
         }
     }
+
+#if defined(__PROSPERO__)
+    if (isArchiveFile || !fileStream.is_open())
+    {
+        const int openError = fileStream.is_open() ? 0 : errno;
+        LOGF_PS5_DIAG("XCreateFileA path={} resolved={} cached_path={} opened={} errno={}",
+                      lpFileName, filePath.string(), cachedPath.string(), fileStream.is_open(), openError);
+    }
+#endif
 
     if (!fileStream.is_open())
     {
@@ -387,7 +400,7 @@ uint32_t XWriteFile(FileHandle* hFile, const void* lpBuffer, uint32_t nNumberOfB
 
 std::filesystem::path FileSystem::ResolvePath(const std::string_view& path, bool checkForMods)
 {
-    LOGF_UTILITY("Game", "Loading file: \"{}\"", path.data());
+    LOGF_UTILITY("Game: Loading file: \"{}\"", path);
     if (checkForMods)
     {
         std::filesystem::path resolvedPath = ModLoader::ResolvePath(path);
@@ -395,7 +408,7 @@ std::filesystem::path FileSystem::ResolvePath(const std::string_view& path, bool
         if (!resolvedPath.empty())
         {
             if (ModLoader::s_isLogTypeConsole)
-                LOGF_UTILITY("Mod Loader", "Loading file: \"{}\"", reinterpret_cast<const char*>(resolvedPath.u8string().c_str()));
+                LOGF_UTILITY("Mod Loader: Loading file: \"{}\"", resolvedPath.string());
 
             return resolvedPath;
         }

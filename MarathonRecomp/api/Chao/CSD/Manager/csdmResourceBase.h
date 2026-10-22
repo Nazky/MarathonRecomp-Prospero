@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Chao/CSD/Core/csdRCPtr.h>
+
 namespace Chao::CSD
 {
     template<typename T>
@@ -13,11 +15,10 @@ namespace Chao::CSD
         };
 
         xpointer<Vftable> m_pVftable;
-        xpointer<RCObject<unsigned char>> m_pResourceData;
+        MARATHON_INSERT_PADDING(4);
         xpointer<T> m_pResource;
     };
 
     MARATHON_ASSERT_OFFSETOF(CResourceBase<void>, m_pVftable, 0x00);
-    MARATHON_ASSERT_OFFSETOF(CResourceBase<void>, m_pResourceData, 0x04);
     MARATHON_ASSERT_OFFSETOF(CResourceBase<void>, m_pResource, 0x08);
 }

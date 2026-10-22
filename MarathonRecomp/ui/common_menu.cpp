@@ -295,12 +295,13 @@ void CommonMenu::Draw()
             // Draw blank text cover.
             drawList->AddRectFilled({ 0.0f, textCoverCornerLeftMin.y }, { res.x, textCoverCornerLeftMax.y }, textCoverColour);
         }
-
-        if (ReduceDraw)
-            drawList->PopClipRect();
     }
 
-    if (!ReduceDraw)
+    if (ReduceDraw)
+    {
+        drawList->PopClipRect();
+    }
+    else
     {
         auto bottomPlateUVs = PIXELS_TO_UV_COORDS(1024, 1024, 1, -17, 700, 145);
         auto bottomPlateStretchUVs = PIXELS_TO_UV_COORDS(1024, 1024, 1, -17, 128, 145);

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <xxHashMap.h>
-#include <api/Marathon.h>
 
 #define MAKE_BITFLAG32(bit) 1U << bit
 #define MAKE_BITFLAG64(bit) 1ULL << bit
@@ -158,8 +157,6 @@ struct MovieModifier
 };
 
 extern const xxHashMap<MovieModifier> g_movieModifiers;
-
-void SetTextEntityModifier(Sonicteam::TextEntity* pTextEntity, uint64_t flags);
 
 #undef MAKE_BITFLAG64
 #undef MAKE_BITFLAG32

@@ -143,6 +143,545 @@ std::unordered_map<std::string_view, std::unordered_map<ELanguage, std::string>>
         }
     },
     {
+        "Options_Category_Mods",
+        {
+            { ELanguage::English,  "Mods" },
+            { ELanguage::Japanese, "Mods" },
+            { ELanguage::German,   "Mods" },
+            { ELanguage::French,   "Mods" },
+            { ELanguage::Spanish,  "Mods" },
+            { ELanguage::Italian,  "Mod" }
+        }
+    },
+    {
+        "Options_Desc_Category_Mods",
+        {
+            { ELanguage::English,  "A toggles a mod; left/right changes load order. Restart to apply." },
+            { ELanguage::Japanese, "AでMODを切り替え、左右で読み込み順を変更します。適用には再起動が必要です" },
+            { ELanguage::German,   "A schaltet Mods um; links/rechts ändert die Ladereihenfolge. Neustart zum Anwenden." },
+            { ELanguage::French,   "A active ou désactive un mod ; gauche/droite change l'ordre. Redémarrez pour appliquer." },
+            { ELanguage::Spanish,  "A activa o desactiva un mod; izquierda/derecha cambia el orden. Reinicia para aplicar." },
+            { ELanguage::Italian,  "A attiva o disattiva una mod; sinistra/destra cambia l'ordine. Riavvia per applicare." }
+        }
+    },
+    {
+        "Options_Mods_Enabled",
+        {
+            { ELanguage::English,  "Enabled" },
+            { ELanguage::Japanese, "有効" },
+            { ELanguage::German,   "Aktiviert" },
+            { ELanguage::French,   "Activé" },
+            { ELanguage::Spanish,  "Activado" },
+            { ELanguage::Italian,  "Attivata" }
+        }
+    },
+    {
+        "Options_Mods_Disabled",
+        {
+            { ELanguage::English,  "Disabled" },
+            { ELanguage::Japanese, "無効" },
+            { ELanguage::German,   "Deaktiviert" },
+            { ELanguage::French,   "Désactivé" },
+            { ELanguage::Spanish,  "Desactivado" },
+            { ELanguage::Italian,  "Disattivata" }
+        }
+    },
+    {
+        "Options_Mods_Empty",
+        {
+            { ELanguage::English,  "No mods found. Add mod folders to:" },
+            { ELanguage::Japanese, "MODが見つかりません。MODフォルダーを次の場所に追加してください:" },
+            { ELanguage::German,   "Keine Mods gefunden. Mod-Ordner hinzufügen unter:" },
+            { ELanguage::French,   "Aucun mod trouvé. Ajoutez des dossiers de mods dans :" },
+            { ELanguage::Spanish,  "No se encontraron mods. Añade carpetas de mods en:" },
+            { ELanguage::Italian,  "Nessuna mod trovata. Aggiungi le cartelle delle mod in:" }
+        }
+    },
+    {
+        "Options_Restart_Mods",
+        {
+            { ELanguage::English,  "Mod list / load order" },
+            { ELanguage::Japanese, "MOD一覧 / 読み込み順" },
+            { ELanguage::German,   "Mod-Liste / Ladereihenfolge" },
+            { ELanguage::French,   "Liste / ordre des mods" },
+            { ELanguage::Spanish,  "Lista / orden de mods" },
+            { ELanguage::Italian,  "Elenco / ordine delle mod" }
+        }
+    },
+    {
+        "Mods_Title",
+        {
+            { ELanguage::English,  "MOD MANAGER" },
+            { ELanguage::Japanese, "MOD MANAGER" },
+            { ELanguage::German,   "MOD-VERWALTUNG" },
+            { ELanguage::French,   "GESTION DES MODS" },
+            { ELanguage::Spanish,  "GESTOR DE MODS" },
+            { ELanguage::Italian,  "GESTIONE MOD" }
+        }
+    },
+    {
+        "Mods_Help_List",
+        {
+            { ELanguage::English,  "A toggles a mod. Left and right change load priority." },
+            { ELanguage::Japanese, "AでMODを有効・無効にし、左右で読み込み順を変更します" },
+            { ELanguage::German,   "A aktiviert oder deaktiviert Mods. Links und rechts ändern die Ladereihenfolge." },
+            { ELanguage::French,   "A active ou désactive un mod. Gauche et droite changent l'ordre de chargement." },
+            { ELanguage::Spanish,  "A activa o desactiva un mod. Izquierda y derecha cambian el orden de carga." },
+            { ELanguage::Italian,  "A attiva o disattiva una mod. Sinistra e destra cambiano l'ordine di caricamento." }
+        }
+    },
+    {
+        "Mods_Help_Options",
+        {
+            { ELanguage::English,  "Up and down select an option. Left and right change its value." },
+            { ELanguage::Japanese, "上下でオプションを選び、左右で値を変更します" },
+            { ELanguage::German,   "Oben und unten wählen eine Option. Links und rechts ändern den Wert." },
+            { ELanguage::French,   "Haut et bas sélectionnent une option. Gauche et droite changent sa valeur." },
+            { ELanguage::Spanish,  "Arriba y abajo seleccionan una opción. Izquierda y derecha cambian su valor." },
+            { ELanguage::Italian,  "Su e giù selezionano un'opzione. Sinistra e destra ne cambiano il valore." }
+        }
+    },
+    {
+        "Mods_Help_Order",
+        {
+            { ELanguage::English,  "Use left/right to move a mod earlier or later in load priority. The first enabled mod takes precedence." },
+            { ELanguage::Japanese, "左右で読み込み順を変更します。最初の有効なMODが優先されます" },
+            { ELanguage::German,   "Mit links/rechts wird die Ladereihenfolge geändert. Die erste aktivierte Mod hat Vorrang." },
+            { ELanguage::French,   "Gauche/droite modifie l'ordre de chargement. Le premier mod activé est prioritaire." },
+            { ELanguage::Spanish,  "Izquierda/derecha cambia el orden de carga. El primer mod activado tiene prioridad." },
+            { ELanguage::Italian,  "Sinistra/destra cambia l'ordine di caricamento. La prima mod attiva ha la priorità." }
+        }
+    },
+    {
+        "Mods_Empty",
+        {
+            { ELanguage::English,  "No managed mods were found." },
+            { ELanguage::Japanese, "管理対象のMODが見つかりません" },
+            { ELanguage::German,   "Keine verwalteten Mods gefunden." },
+            { ELanguage::French,   "Aucun mod géré n'a été trouvé." },
+            { ELanguage::Spanish,  "No se encontraron mods administrados." },
+            { ELanguage::Italian,  "Nessuna mod gestita trovata." }
+        }
+    },
+    {
+        "Mods_EmptyHint",
+        {
+            { ELanguage::English,  "Add one mod folder per installed mod here:" },
+            { ELanguage::Japanese, "ここにMODごとのフォルダーを追加してください:" },
+            { ELanguage::German,   "Füge hier für jede Mod einen Ordner hinzu:" },
+            { ELanguage::French,   "Ajoutez ici un dossier pour chaque mod :" },
+            { ELanguage::Spanish,  "Añade aquí una carpeta para cada mod:" },
+            { ELanguage::Italian,  "Aggiungi qui una cartella per ogni mod:" }
+        }
+    },
+    {
+        "Mods_OptionsCount",
+        {
+            { ELanguage::English,  "options" },
+            { ELanguage::Japanese, "オプション" },
+            { ELanguage::German,   "Optionen" },
+            { ELanguage::French,   "options" },
+            { ELanguage::Spanish,  "opciones" },
+            { ELanguage::Italian,  "opzioni" }
+        }
+    },
+    {
+        "Mods_NoOptions",
+        {
+            { ELanguage::English,  "This mod does not declare configurable options." },
+            { ELanguage::Japanese, "このMODには変更可能なオプションがありません" },
+            { ELanguage::German,   "Diese Mod stellt keine konfigurierbaren Optionen bereit." },
+            { ELanguage::French,   "Ce mod ne déclare aucune option configurable." },
+            { ELanguage::Spanish,  "Este mod no declara opciones configurables." },
+            { ELanguage::Italian,  "Questa mod non dichiara opzioni configurabili." }
+        }
+    },
+    {
+        "Mods_ReadOnly",
+        {
+            { ELanguage::English,  "Read-only" },
+            { ELanguage::Japanese, "読み取り専用" },
+            { ELanguage::German,   "Schreibgeschützt" },
+            { ELanguage::French,   "Lecture seule" },
+            { ELanguage::Spanish,  "Solo lectura" },
+            { ELanguage::Italian,  "Sola lettura" }
+        }
+    },
+    {
+        "Mods_Value_Default",
+        {
+            { ELanguage::English,  "Default" },
+            { ELanguage::Japanese, "既定" },
+            { ELanguage::German,   "Standard" },
+            { ELanguage::French,   "Par défaut" },
+            { ELanguage::Spanish,  "Predeterminado" },
+            { ELanguage::Italian,  "Predefinito" }
+        }
+    },
+    {
+        "Mods_Value_Custom",
+        {
+            { ELanguage::English,  "Custom" },
+            { ELanguage::Japanese, "カスタム" },
+            { ELanguage::German,   "Benutzerdefiniert" },
+            { ELanguage::French,   "Personnalisé" },
+            { ELanguage::Spanish,  "Personalizado" },
+            { ELanguage::Italian,  "Personalizzato" }
+        }
+    },
+    {
+        "Mods_Author",
+        {
+            { ELanguage::English,  "Author" },
+            { ELanguage::Japanese, "作者" },
+            { ELanguage::German,   "Autor" },
+            { ELanguage::French,   "Auteur" },
+            { ELanguage::Spanish,  "Autor" },
+            { ELanguage::Italian,  "Autore" }
+        }
+    },
+    {
+        "Mods_NoDescription",
+        {
+            { ELanguage::English,  "No description provided." },
+            { ELanguage::Japanese, "説明はありません" },
+            { ELanguage::German,   "Keine Beschreibung vorhanden." },
+            { ELanguage::French,   "Aucune description fournie." },
+            { ELanguage::Spanish,  "No se proporcionó una descripción." },
+            { ELanguage::Italian,  "Nessuna descrizione fornita." }
+        }
+    },
+    {
+        "Mods_Folder",
+        {
+            { ELanguage::English,  "Folder" },
+            { ELanguage::Japanese, "フォルダー" },
+            { ELanguage::German,   "Ordner" },
+            { ELanguage::French,   "Dossier" },
+            { ELanguage::Spanish,  "Carpeta" },
+            { ELanguage::Italian,  "Cartella" }
+        }
+    },
+    {
+        "Mods_OptionCount",
+        {
+            { ELanguage::English,  "Configurable options" },
+            { ELanguage::Japanese, "設定可能なオプション" },
+            { ELanguage::German,   "Konfigurierbare Optionen" },
+            { ELanguage::French,   "Options configurables" },
+            { ELanguage::Spanish,  "Opciones configurables" },
+            { ELanguage::Italian,  "Opzioni configurabili" }
+        }
+    },
+    {
+        "Mods_Installed",
+        {
+            { ELanguage::English,  "managed mods" },
+            { ELanguage::Japanese, "管理対象MOD" },
+            { ELanguage::German,   "verwaltete Mods" },
+            { ELanguage::French,   "mods gérés" },
+            { ELanguage::Spanish,  "mods administrados" },
+            { ELanguage::Italian,  "mod gestite" }
+        }
+    },
+    {
+        "Mods_RestartChange",
+        {
+            { ELanguage::English,  "Mod enable state, load order, or configuration options" },
+            { ELanguage::Japanese, "MODの有効状態、読み込み順、または設定オプション" },
+            { ELanguage::German,   "Mod-Aktivierung, Ladereihenfolge oder Konfigurationsoptionen" },
+            { ELanguage::French,   "Activation, ordre de chargement ou options de configuration des mods" },
+            { ELanguage::Spanish,  "Activación, orden de carga u opciones de configuración de los mods" },
+            { ELanguage::Italian,  "Attivazione, ordine di caricamento o opzioni di configurazione delle mod" }
+        }
+    },
+    {
+        "Mods_Message_RestartConfirmClose",
+        {
+            { ELanguage::English,  "Mod changes are staged. Save them and close the game now? Relaunch the game to apply them. Choosing No discards these changes." },
+            { ELanguage::Japanese, "MODの変更はまだ保存されていません。変更を保存してゲームを終了しますか？反映するにはゲームを再起動してください。「いいえ」を選ぶと変更は破棄されます" },
+            { ELanguage::German,   "Mod-Änderungen sind vorgemerkt. Jetzt speichern und das Spiel schließen? Starte das Spiel erneut, um sie anzuwenden. Nein verwirft die Änderungen." },
+            { ELanguage::French,   "Les changements de mods sont en attente. Les enregistrer et fermer le jeu maintenant ? Relancez-le pour les appliquer. Non annule ces changements." },
+            { ELanguage::Spanish,  "Los cambios de mods están pendientes. ¿Guardarlos y cerrar el juego ahora? Reinícialo para aplicarlos. No descarta los cambios." },
+            { ELanguage::Italian,  "Le modifiche alle mod sono in attesa. Salvarle e chiudere il gioco ora? Riavvialo per applicarle. No annulla queste modifiche." }
+        }
+    },
+    {
+        "Mods_Error_SaveFailed",
+        {
+            { ELanguage::English,  "Could not save mod settings. Check the managed mod files and try again." },
+            { ELanguage::Japanese, "MOD設定を保存できません。管理対象のMODファイルを確認して再試行してください" },
+            { ELanguage::German,   "Mod-Einstellungen konnten nicht gespeichert werden. Prüfe die Mod-Dateien und versuche es erneut." },
+            { ELanguage::French,   "Impossible d'enregistrer les paramètres des mods. Vérifiez les fichiers et réessayez." },
+            { ELanguage::Spanish,  "No se pudieron guardar los ajustes de mods. Revisa los archivos y vuelve a intentarlo." },
+            { ELanguage::Italian,  "Impossibile salvare le impostazioni delle mod. Controlla i file e riprova." }
+        }
+    },
+    {
+        "Mods_Button_Open",
+        {
+            { ELanguage::English,  "Mods" },
+            { ELanguage::Japanese, "Mods" },
+            { ELanguage::German,   "Mods" },
+            { ELanguage::French,   "Mods" },
+            { ELanguage::Spanish,  "Mods" },
+            { ELanguage::Italian,  "Mod" }
+        }
+    },
+    {
+        "Mods_Button_Toggle",
+        {
+            { ELanguage::English,  "Toggle" },
+            { ELanguage::Japanese, "切替" },
+            { ELanguage::German,   "Umschalten" },
+            { ELanguage::French,   "Activer" },
+            { ELanguage::Spanish,  "Alternar" },
+            { ELanguage::Italian,  "Attiva" }
+        }
+    },
+    {
+        "Mods_Button_Options",
+        {
+            { ELanguage::English,  "Options" },
+            { ELanguage::Japanese, "オプション" },
+            { ELanguage::German,   "Optionen" },
+            { ELanguage::French,   "Options" },
+            { ELanguage::Spanish,  "Opciones" },
+            { ELanguage::Italian,  "Opzioni" }
+        }
+    },
+    {
+        "Mods_Button_Change",
+        {
+            { ELanguage::English,  "Change" },
+            { ELanguage::Japanese, "変更" },
+            { ELanguage::German,   "Ändern" },
+            { ELanguage::French,   "Changer" },
+            { ELanguage::Spanish,  "Cambiar" },
+            { ELanguage::Italian,  "Cambia" }
+        }
+    },
+    {
+        "Mods_Error",
+        {
+            { ELanguage::English,  "Error" },
+            { ELanguage::Japanese, "エラー" },
+            { ELanguage::German,   "Fehler" },
+            { ELanguage::French,   "Erreur" },
+            { ELanguage::Spanish,  "Error" },
+            { ELanguage::Italian,  "Errore" }
+        }
+    },
+    {
+        "SystemInfo_FPS",
+        {
+            { ELanguage::English,  "FPS" },
+            { ELanguage::Japanese, "FPS" },
+            { ELanguage::German,   "FPS" },
+            { ELanguage::French,   "IPS" },
+            { ELanguage::Spanish,  "FPS" },
+            { ELanguage::Italian,  "FPS" }
+        }
+    },
+    {
+        "SystemInfo_CPU",
+        {
+            { ELanguage::English,  "CPU update" },
+            { ELanguage::Japanese, "CPU更新" },
+            { ELanguage::German,   "CPU-Update" },
+            { ELanguage::French,   "CPU (jeu)" },
+            { ELanguage::Spanish,  "CPU (juego)" },
+            { ELanguage::Italian,  "CPU (gioco)" }
+        }
+    },
+    {
+        "SystemInfo_GPU",
+        {
+            { ELanguage::English,  "GPU" },
+            { ELanguage::Japanese, "GPU" },
+            { ELanguage::German,   "GPU" },
+            { ELanguage::French,   "GPU" },
+            { ELanguage::Spanish,  "GPU" },
+            { ELanguage::Italian,  "GPU" }
+        }
+    },
+    {
+        "SystemInfo_GPUFrame",
+        {
+            { ELanguage::English,  "GPU frame" },
+            { ELanguage::Japanese, "GPU時間" },
+            { ELanguage::German,   "GPU-Frame" },
+            { ELanguage::French,   "Temps GPU" },
+            { ELanguage::Spanish,  "Tiempo GPU" },
+            { ELanguage::Italian,  "Tempo GPU" }
+        }
+    },
+    {
+        "SystemInfo_SectionPerformance",
+        {
+            { ELanguage::English,  "PERFORMANCE" },
+            { ELanguage::Japanese, "性能" },
+            { ELanguage::German,   "LEISTUNG" },
+            { ELanguage::French,   "PERFORMANCES" },
+            { ELanguage::Spanish,  "RENDIMIENTO" },
+            { ELanguage::Italian,  "PRESTAZIONI" }
+        }
+    },
+    {
+        "SystemInfo_SectionDisplay",
+        {
+            { ELanguage::English,  "DISPLAY" },
+            { ELanguage::Japanese, "表示" },
+            { ELanguage::German,   "ANZEIGE" },
+            { ELanguage::French,   "AFFICHAGE" },
+            { ELanguage::Spanish,  "PANTALLA" },
+            { ELanguage::Italian,  "SCHERMO" }
+        }
+    },
+    {
+        "SystemInfo_Resolution",
+        {
+            { ELanguage::English,  "Render" },
+            { ELanguage::Japanese, "描画" },
+            { ELanguage::German,   "Render" },
+            { ELanguage::French,   "Rendu" },
+            { ELanguage::Spanish,  "Render" },
+            { ELanguage::Italian,  "Render" }
+        }
+    },
+    {
+        "SystemInfo_FPSCap",
+        {
+            { ELanguage::English,  "FPS cap" },
+            { ELanguage::Japanese, "FPS上限" },
+            { ELanguage::German,   "FPS-Limit" },
+            { ELanguage::French,   "Limite FPS" },
+            { ELanguage::Spanish,  "Límite de FPS" },
+            { ELanguage::Italian,  "Limite FPS" }
+        }
+    },
+    {
+        "SystemInfo_SectionSoCSensors",
+        {
+            { ELanguage::English,  "SOC SENSORS" },
+            { ELanguage::Japanese, "SoCセンサー" },
+            { ELanguage::German,   "SOC-SENSOREN" },
+            { ELanguage::French,   "CAPTEURS SOC" },
+            { ELanguage::Spanish,  "SENSORES SOC" },
+            { ELanguage::Italian,  "SENSORI SOC" }
+        }
+    },
+    {
+        "SystemInfo_SoCSensor",
+        {
+            { ELanguage::English,  "SoC sensor" },
+            { ELanguage::Japanese, "SoCセンサー" },
+            { ELanguage::German,   "SoC-Sensor" },
+            { ELanguage::French,   "Capteur SoC" },
+            { ELanguage::Spanish,  "Sensor SoC" },
+            { ELanguage::Italian,  "Sensore SoC" }
+        }
+    },
+    {
+        "SystemInfo_SectionMemory",
+        {
+            { ELanguage::English,  "MEMORY" },
+            { ELanguage::Japanese, "メモリ" },
+            { ELanguage::German,   "SPEICHER" },
+            { ELanguage::French,   "MÉMOIRE" },
+            { ELanguage::Spanish,  "MEMORIA" },
+            { ELanguage::Italian,  "MEMORIA" }
+        }
+    },
+    {
+        "SystemInfo_GameHeap",
+        {
+            { ELanguage::English,  "Game RAM heap" },
+            { ELanguage::Japanese, "ゲームRAM" },
+            { ELanguage::German,   "Spiel-RAM/Heap" },
+            { ELanguage::French,   "RAM du jeu" },
+            { ELanguage::Spanish,  "RAM del juego" },
+            { ELanguage::Italian,  "RAM di gioco" }
+        }
+    },
+    {
+        "SystemInfo_PhysicalHeap",
+        {
+            { ELanguage::English,  "Physical RAM heap" },
+            { ELanguage::Japanese, "物理RAM" },
+            { ELanguage::German,   "Physischer RAM-Heap" },
+            { ELanguage::French,   "RAM physique" },
+            { ELanguage::Spanish,  "RAM física" },
+            { ELanguage::Italian,  "RAM fisica" }
+        }
+    },
+    {
+        "SystemInfo_SectionPaths",
+        {
+            { ELanguage::English,  "PATHS" },
+            { ELanguage::Japanese, "パス" },
+            { ELanguage::German,   "PFADE" },
+            { ELanguage::French,   "CHEMINS" },
+            { ELanguage::Spanish,  "RUTAS" },
+            { ELanguage::Italian,  "PERCORSI" }
+        }
+    },
+    {
+        "SystemInfo_UserDataPath",
+        {
+            { ELanguage::English,  "User data" },
+            { ELanguage::Japanese, "ユーザーデータ" },
+            { ELanguage::German,   "Benutzerdaten" },
+            { ELanguage::French,   "Données utilisateur" },
+            { ELanguage::Spanish,  "Datos de usuario" },
+            { ELanguage::Italian,  "Dati utente" }
+        }
+    },
+    {
+        "SystemInfo_ExecutablePath",
+        {
+            { ELanguage::English,  "Game executable" },
+            { ELanguage::Japanese, "ゲーム実行ファイル" },
+            { ELanguage::German,   "Spielexecutable" },
+            { ELanguage::French,   "Exécutable du jeu" },
+            { ELanguage::Spanish,  "Ejecutable del juego" },
+            { ELanguage::Italian,  "Eseguibile del gioco" }
+        }
+    },
+    {
+        "SystemInfo_GameMount",
+        {
+            { ELanguage::English,  "Game mount" },
+            { ELanguage::Japanese, "ゲームマウント" },
+            { ELanguage::German,   "Spiel-Mount" },
+            { ELanguage::French,   "Montage du jeu" },
+            { ELanguage::Spanish,  "Montaje del juego" },
+            { ELanguage::Italian,  "Mount del gioco" }
+        }
+    },
+    {
+        "SystemInfo_OutputResolution",
+        {
+            { ELanguage::English,  "Output" },
+            { ELanguage::Japanese, "出力" },
+            { ELanguage::German,   "Ausgabe" },
+            { ELanguage::French,   "Sortie" },
+            { ELanguage::Spanish,  "Salida" },
+            { ELanguage::Italian,  "Output" }
+        }
+    },
+    {
+        "SystemInfo_RenderScale",
+        {
+            { ELanguage::English,  "Scale" },
+            { ELanguage::Japanese, "倍率" },
+            { ELanguage::German,   "Skalierung" },
+            { ELanguage::French,   "Échelle" },
+            { ELanguage::Spanish,  "Escala" },
+            { ELanguage::Italian,  "Scala" }
+        }
+    },
+    {
         "Options_Category_Debug",
         {
             { ELanguage::English,  "Debug settings" },
@@ -291,6 +830,18 @@ std::unordered_map<std::string_view, std::unordered_map<ELanguage, std::string>>
             { ELanguage::French,   "Le jeu doit redémarrer pour appliquer\nles modifications suivantes. OK ?\n" },
             { ELanguage::Spanish,  "Se necesita reiniciar el juego para\naplicar los siguientes cambios. ¿OK?\n" },
             { ELanguage::Italian,  "Il gioco deve essere riavviato per\napplicare le seguenti modifiche. OK?\n" }
+        }
+    },
+    {
+        // PS5 confirms by closing the title; the player relaunches it manually.
+        "Options_Message_RestartConfirmClose",
+        {
+            { ELanguage::English,  "Some changed settings take effect only after you\nclose and relaunch the game.\n\nClose the game now? Relaunch it afterward\nto apply these changes.\n" },
+            { ELanguage::Japanese, "変更された設定はゲームを終了して\n再起動すると反映されます。\n\nゲームを終了しますか？\n変更を適用するには、あとで再起動してください。\n" },
+            { ELanguage::German,   "Einige Änderungen werden erst wirksam, wenn\ndas Spiel geschlossen und neu gestartet wird.\n\nMöchtest du das Spiel jetzt schließen?\nStarte es danach neu, um die Änderungen anzuwenden.\n" },
+            { ELanguage::French,   "Certains changements ne prennent effet qu’après\nla fermeture puis le redémarrage du jeu.\n\nVoulez-vous fermer le jeu maintenant ?\nRelancez-le ensuite pour appliquer ces changements.\n" },
+            { ELanguage::Spanish,  "Algunos cambios solo se aplican al cerrar y\nvolver a iniciar el juego.\n\n¿Quieres cerrar el juego ahora?\nVuelve a iniciarlo para aplicar los cambios.\n" },
+            { ELanguage::Italian,  "Alcune modifiche si applicano solo dopo aver\nchiuso e riavviato il gioco.\n\nVuoi chiudere il gioco ora?\nRiavvialo per applicare le modifiche.\n" }
         }
     },
     {
@@ -974,6 +1525,61 @@ std::unordered_map<std::string_view, std::unordered_map<ELanguage, std::string>>
         }
     },
     {
+        "Button_SelectQuitMods",
+        {
+            { ELanguage::English,  "${picture(button_a)}${locale(Common_Select)}  ${picture(button_b)}${locale(Common_Quit)}  ${picture(button_x)}${locale(Mods_Button_Open)}" },
+            { ELanguage::Japanese, "${picture(button_a)}${locale(Common_Select)}  ${picture(button_b)}${locale(Common_Quit)}  ${picture(button_x)}${locale(Mods_Button_Open)}" },
+            { ELanguage::German,   "${picture(button_a)}${locale(Common_Select)}　　${picture(button_b)}${locale(Common_Quit)}　　${picture(button_x)}${locale(Mods_Button_Open)}" },
+            { ELanguage::French,   "${picture(button_a)}${locale(Common_Select)}  ${picture(button_b)}${locale(Common_Quit)}  ${picture(button_x)}${locale(Mods_Button_Open)}" },
+            { ELanguage::Spanish,  "${picture(button_a)} ${locale(Common_Select)}  ${picture(button_b)} ${locale(Common_Quit)}  ${picture(button_x)} ${locale(Mods_Button_Open)}" },
+            { ELanguage::Italian,  "${picture(button_a)}${locale(Common_Select)}  ${picture(button_b)}${locale(Common_Quit)}  ${picture(button_x)}${locale(Mods_Button_Open)}" }
+        }
+    },
+    {
+        "Mods_DetectedStatus",
+        {
+            { ELanguage::English,  "Mods detected: {}." },
+            { ELanguage::Japanese, "{}件のMODを検出しました。" },
+            { ELanguage::German,   "{} Mods erkannt." },
+            { ELanguage::French,   "{} mods détectés." },
+            { ELanguage::Spanish,  "Se detectaron {} mods." },
+            { ELanguage::Italian,  "Rilevati {} mod." }
+        }
+    },
+    {
+        "Button_Mods_ToggleOptionsBack",
+        {
+            { ELanguage::English,  "${picture(button_a)}${locale(Mods_Button_Toggle)}  ${picture(button_x)}${locale(Mods_Button_Options)}  ${picture(button_b)}${locale(Common_Back)}" },
+            { ELanguage::Japanese, "${picture(button_a)}${locale(Mods_Button_Toggle)}  ${picture(button_x)}${locale(Mods_Button_Options)}  ${picture(button_b)}${locale(Common_Back)}" },
+            { ELanguage::German,   "${picture(button_a)}${locale(Mods_Button_Toggle)}　　${picture(button_x)}${locale(Mods_Button_Options)}　　${picture(button_b)}${locale(Common_Back)}" },
+            { ELanguage::French,   "${picture(button_a)}${locale(Mods_Button_Toggle)}  ${picture(button_x)}${locale(Mods_Button_Options)}  ${picture(button_b)}${locale(Common_Back)}" },
+            { ELanguage::Spanish,  "${picture(button_a)} ${locale(Mods_Button_Toggle)}  ${picture(button_x)} ${locale(Mods_Button_Options)}  ${picture(button_b)} ${locale(Common_Back)}" },
+            { ELanguage::Italian,  "${picture(button_a)}${locale(Mods_Button_Toggle)}  ${picture(button_x)}${locale(Mods_Button_Options)}  ${picture(button_b)}${locale(Common_Back)}" }
+        }
+    },
+    {
+        "Button_Mods_ChangeBack",
+        {
+            { ELanguage::English,  "${picture(button_x)}${locale(Mods_Button_Change)}  ${picture(button_b)}${locale(Common_Back)}" },
+            { ELanguage::Japanese, "${picture(button_x)}${locale(Mods_Button_Change)}  ${picture(button_b)}${locale(Common_Back)}" },
+            { ELanguage::German,   "${picture(button_x)}${locale(Mods_Button_Change)}　　${picture(button_b)}${locale(Common_Back)}" },
+            { ELanguage::French,   "${picture(button_x)}${locale(Mods_Button_Change)}  ${picture(button_b)}${locale(Common_Back)}" },
+            { ELanguage::Spanish,  "${picture(button_x)} ${locale(Mods_Button_Change)}  ${picture(button_b)} ${locale(Common_Back)}" },
+            { ELanguage::Italian,  "${picture(button_x)}${locale(Mods_Button_Change)}  ${picture(button_b)}${locale(Common_Back)}" }
+        }
+    },
+    {
+        "Button_Mods_EmptyBack",
+        {
+            { ELanguage::English,  "${picture(button_b)}${locale(Common_Back)}" },
+            { ELanguage::Japanese, "${picture(button_b)}${locale(Common_Back)}" },
+            { ELanguage::German,   "${picture(button_b)}${locale(Common_Back)}" },
+            { ELanguage::French,   "${picture(button_b)}${locale(Common_Back)}" },
+            { ELanguage::Spanish,  "${picture(button_b)}${locale(Common_Back)}" },
+            { ELanguage::Italian,  "${picture(button_b)}${locale(Common_Back)}" }
+        }
+    },
+    {
         "Button_SelectBack",
         {
             { ELanguage::English, "${picture(button_a)}${locale(Common_Select)}  ${picture(button_b)}${locale(Common_Back)}" },
@@ -1003,53 +1609,6 @@ std::unordered_map<std::string_view, std::unordered_map<ELanguage, std::string>>
             { ELanguage::English, "${picture(button_y)}${locale(Achievements_Title)}  ${picture(button_b)}${locale(Common_Back)}" },
             { ELanguage::German,  "${picture(button_y)}${locale(Achievements_Title)}　　${picture(button_b)}${locale(Common_Back)}" },
             { ELanguage::Spanish, "${picture(button_y)} ${locale(Achievements_Title)}  ${picture(button_b)} ${locale(Common_Back)}" }
-        }
-    },
-    // The following messages are corrections made in the PS3 version, and should not be changed.
-    {
-        "PS3_msg_unlock_battle",
-        {
-            { ELanguage::English,  "Last Episode is now unlocked.\nPlease select the Episode from Single Player." },
-            { ELanguage::Japanese, "ラストエピソードが遊べるようになりました！\nシングルプレイヤーからエピソードを選択してください" },
-            { ELanguage::German,   "Letzte Episode freigeschaltet.\nBitte wähle die Episode aus dem\nModus Einzelspieler." },
-            { ELanguage::French,   "Le Dernier Episode est désormais\ndéverrouillé. Sélectionner l'épisode\ndans le mode Un joueur." },
-            { ELanguage::Spanish,  "El Último Episodio ha sido desbloqueado.\nSelecciona el episodio en el modo Un jugador." },
-            { ELanguage::Italian,  "Ultimo episodio sbloccato.\nSeleziona l'episodio da Giocatore singolo." }
-        }
-    },
-    {
-        "PS3_msg_makenewdata",
-        {
-            { ELanguage::English,  "Create new Save Data." },
-            { ELanguage::Japanese, "新規作成" },
-            { ELanguage::German,   "Neue Speicherdaten erstellen." },
-            { ELanguage::French,   "Créer des nouvelles données de sauvegarde." },
-            { ELanguage::Spanish,  "Crear nuevos datos guardados." },
-            { ELanguage::Italian,  "Crea nuovi dati di salvataggio." }
-        }
-    },
-    {
-        "PS3_staff0308",
-        {
-            { ELanguage::English,  "Katsunori Kosuge" }
-        }
-    },
-    {
-        "PS3_staff0320",
-        {
-            { ELanguage::English,  "Digital Media Labo.,inc" }
-        }
-    },
-    {
-        "PS3_staff0321",
-        {
-            { ELanguage::English,  "Polygon Magic,inc." }
-        }
-    },
-    {
-        "PS3_staff0709",
-        {
-            { ELanguage::English,  "Dubbing Production Manager" }
         }
     }
 };

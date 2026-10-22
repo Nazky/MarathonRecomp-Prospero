@@ -2,7 +2,11 @@
 #include <os/logger.h>
 #include <ui/fader.h>
 #include <ui/message_window.h>
+#include <ui/mods_menu.h>
 #include <ui/options_menu.h>
+#include <Sonicteam/SoX/Input/Manager.h>
+
+#include <cstdint>
 #include <user/achievement_manager.h>
 #include <user/config.h>
 #include <user/paths.h>
@@ -21,6 +25,63 @@ static bool g_saveDataExists{};
 
 static bool g_isSecretDone{};
 static uint32_t g_secretFlags{};
+static bool g_suppressBackUntilReleased{};
+
+namespace
+{
+    class ScopedTitleTaskBackInputMask
+    {
+        struct SavedPadButtons
+        {
+            Sonicteam::SoX::Input::PadState* pad{};
+            uint32_t lastButtons{};
+            uint32_t invertedLastButtons{};
+            uint32_t pressedButtons{};
+            uint32_t releasedButtons{};
+        };
+
+        SavedPadButtons m_savedButtons;
+
+    public:
+        explicit ScopedTitleTaskBackInputMask(bool shouldMask)
+        {
+            if (!shouldMask || !App::s_pApp || !App::s_pApp->m_pDoc)
+                return;
+
+            auto& inputManagers = App::s_pApp->m_pDoc->m_vspInputManagers;
+            if (inputManagers.empty() || !inputManagers[0])
+                return;
+
+            auto& pad = inputManagers[0]->m_PadState;
+            constexpr uint32_t backMask = static_cast<uint32_t>(Sonicteam::SoX::Input::KeyState_B);
+            m_savedButtons = {
+                &pad,
+                pad.LastButtons.get(),
+                pad.InvertedLastButtons.get(),
+                pad.PressedButtons.get(),
+                pad.ReleasedButtons.get()
+            };
+
+            // Hide Circle/O only during TitleTask::Update. Restore the pad
+            // immediately afterwards so the Mods window can still use B.
+            pad.LastButtons = pad.LastButtons.get() & ~backMask;
+            pad.InvertedLastButtons = pad.InvertedLastButtons.get() | backMask;
+            pad.PressedButtons = pad.PressedButtons.get() & ~backMask;
+            pad.ReleasedButtons = pad.ReleasedButtons.get() & ~backMask;
+        }
+
+        ~ScopedTitleTaskBackInputMask()
+        {
+            if (!m_savedButtons.pad)
+                return;
+
+            m_savedButtons.pad->LastButtons = m_savedButtons.lastButtons;
+            m_savedButtons.pad->InvertedLastButtons = m_savedButtons.invertedLastButtons;
+            m_savedButtons.pad->PressedButtons = m_savedButtons.pressedButtons;
+            m_savedButtons.pad->ReleasedButtons = m_savedButtons.releasedButtons;
+        }
+    };
+}
 
 enum
 {
@@ -192,7 +253,32 @@ PPC_FUNC(sub_825126A0)
     if (pTitleTask->m_State != Sonicteam::TitleTask::TitleState_OptionsProceed)
         g_titleProceedOutroTime = 0.0;
 
-    auto skipStateUpdate = ProcessQuitMessage(pTitleTask);
+    const bool modsMenuBlocksInput = ModsMenu::BlocksMainMenuInput();
+    if (modsMenuBlocksInput)
+    {
+        g_suppressBackUntilReleased = true;
+    }
+    else if (g_suppressBackUntilReleased)
+    {
+        bool backIsStillHeld = false;
+        if (App::s_pApp && App::s_pApp->m_pDoc)
+        {
+            for (auto& inputManager : App::s_pApp->m_pDoc->m_vspInputManagers)
+            {
+                if (inputManager &&
+                    (inputManager->m_PadState.IsDown(Sonicteam::SoX::Input::KeyState_B) ||
+                        inputManager->m_PadState.IsPressed(Sonicteam::SoX::Input::KeyState_B)))
+                {
+                    backIsStillHeld = true;
+                    break;
+                }
+            }
+        }
+        if (!backIsStillHeld)
+            g_suppressBackUntilReleased = false;
+    }
+    const bool blockTitleBackInput = modsMenuBlocksInput || g_suppressBackUntilReleased;
+    const bool skipStateUpdate = blockTitleBackInput ? false : ProcessQuitMessage(pTitleTask);
 
     if (skipStateUpdate)
     {
@@ -206,9 +292,10 @@ PPC_FUNC(sub_825126A0)
     }
     else
     {
-        if (auto& spInputManager = App::s_pApp->m_pDoc->m_vspInputManagers[0])
+        if (!blockTitleBackInput && App::s_pApp && App::s_pApp->m_pDoc &&
+            !App::s_pApp->m_pDoc->m_vspInputManagers.empty() && App::s_pApp->m_pDoc->m_vspInputManagers[0])
         {
-            auto& rPadState = spInputManager->m_PadState;
+            auto& rPadState = App::s_pApp->m_pDoc->m_vspInputManagers[0]->m_PadState;
 
             if (rPadState.IsPressed(Sonicteam::SoX::Input::KeyState_B))
             {
@@ -231,6 +318,7 @@ PPC_FUNC(sub_825126A0)
             }
         }
 
+        ScopedTitleTaskBackInputMask backInputMask(blockTitleBackInput);
         __imp__sub_825126A0(ctx, base);
     }
 }

@@ -34,7 +34,7 @@ public:
 #define CONFIG_LOCK_CALLBACK(name)  if (name.LockCallback) name.LockCallback(&name)
 #define CONFIG_APPLY_CALLBACK(name) if (name.ApplyCallback) name.ApplyCallback(&name)
 
-#define CONFIG_WINDOWPOS_CENTRED 0x2FFF0000
+#define WINDOWPOS_CENTRED        0x2FFF0000
 
 extern std::vector<IConfigDef*> g_configDefinitions;
 
@@ -108,6 +108,10 @@ enum class ETripleBuffering : uint32_t
 
 static constexpr int32_t FPS_MIN = 15;
 static constexpr int32_t FPS_MAX = 241;
+#if defined(__PROSPERO__)
+static constexpr int32_t FPS_PROSPERO_OPTIONS[] = { 30, 60, 90, 120 };
+static constexpr int32_t FPS_PROSPERO_OPTION_COUNT = 4;
+#endif
 
 enum class EAntiAliasing : uint32_t
 {

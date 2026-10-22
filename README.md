@@ -13,6 +13,9 @@ Marathon Recompiled is an unofficial PC port of the Xbox 360 version of Sonic th
 
 [XenonRecomp](https://github.com/sonicnext-dev/XenonRecomp) and [XenosRecomp](https://github.com/sonicnext-dev/XenosRecomp) are the main recompilers used for converting the game's original PowerPC code and Xenos shaders into compatible C++ and HLSL code respectively. The development of these recompilers was directly inspired by [N64: Recompiled](https://github.com/N64Recomp/N64Recomp), which was used to create [Zelda 64: Recompiled](https://github.com/Zelda64Recomp/Zelda64Recomp).
 
+> [!NOTE]
+> This checkout also contains an experimental, unofficial PlayStation 5 (Prospero) fork setup. It is separate from upstream's supported Windows/Linux/macOS builds and has not yet been validated on console. See [README-PS5.md](README-PS5.md) for the PS5 build, dependency, and deployment workflow.
+
 ## Table of Contents
 
 - [Known Issues](#known-issues)
